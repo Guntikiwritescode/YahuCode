@@ -10,6 +10,7 @@
 use crate::ast::{BinOp, Expr, Program, Stmt, UnOp};
 use crate::euphemism;
 use crate::lexer::{lex, Tok, Token};
+use crate::model::{Clearance, SODI};
 
 /// A parse failure (loud, never swallowed — §12).
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +123,8 @@ impl Parser {
 
     fn stmt(&mut self) -> Result<Stmt, ParseError> {
         match self.peek().clone() {
+            // `(self_defense) action;` — the universal cast applied to an action (#7).
+            Tok::LParen => self.self_defense_action(),
             Tok::Ident(kw) => match kw.as_str() {
                 "if" => self.if_stmt(),
                 "while" => self.while_stmt(),
@@ -138,6 +141,24 @@ impl Parser {
                 },
             },
             other => self.err(format!("unexpected token at statement start: {other:?}")),
+        }
+    }
+
+    /// `(self_defense) <action>;` — the one statement-level cast prefix (spike shape).
+    fn self_defense_action(&mut self) -> Result<Stmt, ParseError> {
+        self.eat(&Tok::LParen)?;
+        let name = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        if name != "self_defense" {
+            return self.err("only (self_defense) is a valid cast prefix on a statement");
+        }
+        match self.call_or_action()? {
+            Stmt::Action { verb, target, .. } => Ok(Stmt::Action {
+                verb,
+                target,
+                self_defense: true,
+            }),
+            _ => self.err("(self_defense) must prefix a sanctioned action"),
         }
     }
 
@@ -388,6 +409,17 @@ impl Parser {
                 Ok(Expr::Str(s))
             }
             Tok::LParen => {
+                // A cast `(PUBLIC|RESTRICTED|סודי|self_defense) <operand>`, or a plain
+                // parenthesized expression.
+                if let Tok::Ident(kw) = self.la(1).clone() {
+                    if is_cast_keyword(&kw) && *self.la(2) == Tok::RParen {
+                        self.next(); // (
+                        self.next(); // keyword
+                        self.next(); // )
+                        let operand = self.unary()?;
+                        return Ok(build_cast(&kw, operand));
+                    }
+                }
                 self.next();
                 let e = self.expr()?;
                 self.eat(&Tok::RParen)?;
@@ -398,6 +430,13 @@ impl Parser {
                 match name.as_str() {
                     "true" => Ok(Expr::Bool(true)),
                     "false" => Ok(Expr::Bool(false)),
+                    // `read(e)` — the clearance-gated read (the ONE read path).
+                    "read" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let e = self.expr()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Read(Box::new(e)))
+                    }
                     _ => {
                         if *self.peek() == Tok::LParen {
                             self.next();
@@ -420,6 +459,30 @@ fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
         op,
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
+    }
+}
+
+/// The four cast-prefix keywords: the three clearance levels plus `self_defense`.
+fn is_cast_keyword(kw: &str) -> bool {
+    kw == "PUBLIC" || kw == "RESTRICTED" || kw == SODI || kw == "self_defense"
+}
+
+fn build_cast(kw: &str, operand: Expr) -> Expr {
+    match kw {
+        "PUBLIC" => Expr::Cast {
+            target: Clearance::Public,
+            expr: Box::new(operand),
+        },
+        "RESTRICTED" => Expr::Cast {
+            target: Clearance::Restricted,
+            expr: Box::new(operand),
+        },
+        "self_defense" => Expr::SelfDefense(Box::new(operand)),
+        // The remaining cast keyword is סודי (guarded by `is_cast_keyword`).
+        _ => Expr::Cast {
+            target: Clearance::Sodi,
+            expr: Box::new(operand),
+        },
     }
 }
 

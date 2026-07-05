@@ -89,6 +89,23 @@ pub enum Expr {
         name: String,
         args: Vec<Expr>,
     },
+
+    /// `read(e)` — the clearance-gated read (the ONE read path). In an expression it
+    /// resolves the value for the current reader, so it lowers the static clearance to
+    /// the reading context (Phase 2).
+    Read(Box<Expr>),
+
+    /// `(PUBLIC|RESTRICTED|סודי) e` — a clearance cast. Reclassify-up is always sound;
+    /// declassify-down swaps in `E(actual)` at the boundary. The static clearance of
+    /// the result is the cast target (Phase 2).
+    Cast {
+        target: crate::model::Clearance,
+        expr: Box<Expr>,
+    },
+
+    /// `(self_defense) e` — the universal cast (#7): always type-checks, at any
+    /// magnitude; the one sanctioned bypass of the disclosure check (Phase 2).
+    SelfDefense(Box<Expr>),
 }
 
 /// A statement. **Closed set** — matched exhaustively in `runtime/` (and `types/`).
@@ -168,6 +185,8 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
                 collect_vars(a, out);
             }
         }
+        Expr::Read(e) | Expr::SelfDefense(e) => collect_vars(e, out),
+        Expr::Cast { expr, .. } => collect_vars(expr, out),
     }
 }
 
@@ -192,5 +211,8 @@ pub fn pretty(expr: &Expr) -> String {
             let a: Vec<String> = args.iter().map(pretty).collect();
             format!("{name}({})", a.join(", "))
         }
+        Expr::Read(e) => format!("read({})", pretty(e)),
+        Expr::Cast { target, expr } => format!("({}) {}", target.label(), pretty(expr)),
+        Expr::SelfDefense(e) => format!("(self_defense) {}", pretty(e)),
     }
 }

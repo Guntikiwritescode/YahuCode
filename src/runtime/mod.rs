@@ -293,6 +293,13 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
             }
             call_function(name, argv, st)
         }
+        // Clearance is a *static* property (checked in `types/`); at runtime the
+        // evaluator is the insider computing ACTUAL, so `read`, casts, and the
+        // `self_defense` bypass all reduce to their operand's real value. (A
+        // declassify's `E`-substitution is a face-rendering concern, not a change to
+        // the scalar value.)
+        Expr::Read(e) | Expr::SelfDefense(e) => eval(e, st),
+        Expr::Cast { expr, .. } => eval(expr, st),
     }
 }
 

@@ -11,7 +11,7 @@
 use std::io::Read;
 use std::process::ExitCode;
 
-use crate::{emit, parser, runtime};
+use crate::{emit, parser, runtime, types};
 
 /// Parse args and run. Returns a process exit code.
 pub fn main(args: &[String]) -> ExitCode {
@@ -61,7 +61,21 @@ pub fn main(args: &[String]) -> ExitCode {
         }
     };
 
+    // Static checks (compile diagnostics: euphemism typing, hasbara gate, op-name,
+    // disclosure). A non-empty result means the program does not compile.
+    let diags = types::check(&program);
+    if !diags.is_empty() {
+        eprintln!("── compile ──");
+        for d in &diags {
+            eprintln!("  ✗ {d}");
+        }
+        return ExitCode::FAILURE;
+    }
+
     let st = runtime::run(&program);
+    if let Some(err) = &st.runtime_error {
+        eprintln!("runtime error: {err}");
+    }
     if json {
         println!("{}", emit::to_json(&st));
     } else {

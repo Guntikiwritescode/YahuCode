@@ -95,6 +95,27 @@ fn division_by_zero_is_recorded_not_a_panic() {
 }
 
 #[test]
+fn self_defense_action_renders_the_marker() {
+    // #7: the self_defense cast on an action; OFFICIAL gets `[self-defense]`, ACTUAL
+    // exposes the unexamined self-defense claim.
+    let st = run_src(
+        "@operation(\"Iron Wall\")\nhasbara(\"security\") { (self_defense) strike(target); }",
+    );
+    let ev = st.log.iter().find(|e| e.candid.contains("bomb")).unwrap();
+    assert_eq!(ev.official, "strike(protester)  [self-defense]");
+    assert!(ev
+        .candid
+        .contains("self-defense claim \u{2014} unexamined, any magnitude accepted"));
+}
+
+#[test]
+fn casts_and_read_are_value_identity_at_runtime() {
+    // Clearance is static; at runtime read/casts/self_defense reduce to the operand.
+    let st = run_src("@operation(\"Silent Shield\")\na = (סודי) 7;\nb = read(a) + (PUBLIC) 1;");
+    assert_eq!(st.env.get("b"), Some(&Val::Int(8)));
+}
+
+#[test]
 fn step_budget_stops_runaway_loops() {
     let cfg = RuntimeConfig {
         max_steps: 1000,
