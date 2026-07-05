@@ -199,18 +199,21 @@ fn runtime_fault_trace_is_redacted_on_the_public_face() {
 fn mossad_activity_is_sodi_tagged_three_tier() {
     // D.4: covert action absent from PUBLIC, redacted for RESTRICTED, candid for סודי.
     use crate::emit::project;
-    use crate::model::Clearance;
+    use crate::model::{Audience, Clearance};
     let st = run_src("@operation(\"Silent Shield\")\nmossad { strike(target); }");
-    assert_eq!(project(&st, Clearance::Public), Vec::<String>::new());
     assert_eq!(
-        project(&st, Clearance::Restricted),
+        project(&st, Clearance::Public, Audience::Record),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        project(&st, Clearance::Restricted, Audience::Record),
         vec![
             "[\u{2588}\u{2588}\u{2588}\u{2588} \u{2014} classified activity (insiders only)]"
                 .to_string()
         ]
     );
     assert_eq!(
-        project(&st, Clearance::Sodi),
+        project(&st, Clearance::Sodi, Audience::Record),
         vec!["bomb(dissident)".to_string()]
     );
 }
@@ -257,14 +260,14 @@ fn blame_of_an_external_actor_is_recorded_as_is() {
 fn covert_blame_resolves_by_clearance() {
     // §7.6: publicly `neither confirm nor deny`; insider-attributable to the real actor.
     use crate::emit::project;
-    use crate::model::Clearance;
+    use crate::model::{Audience, Clearance};
     let st = run_src("@operation(\"Silent Shield\")\nmossad { blame(operatives); }");
     assert_eq!(
-        project(&st, Clearance::Public),
+        project(&st, Clearance::Public, Audience::Record),
         vec!["responsibility: [neither confirm nor deny]".to_string()]
     );
     // The candid (סודי) face names the real actor.
-    let sodi = project(&st, Clearance::Sodi);
+    let sodi = project(&st, Clearance::Sodi, Audience::Record);
     assert!(sodi[0].contains("operatives"));
     assert!(sodi[0].contains("insider-attributable"));
 }
@@ -296,11 +299,61 @@ fn step_budget_stops_an_empty_bodied_loop() {
 }
 
 #[test]
+fn call_depth_guard_stops_infinite_function_recursion() {
+    // Companion to the step budget: unbounded RECURSION must abort loudly (a controlled
+    // EvalError), never overflow the native stack. The step budget alone does not catch
+    // this — native frames exhaust the OS stack long before the step count is reached.
+    let cfg = RuntimeConfig {
+        max_depth: 64,
+        ..RuntimeConfig::default()
+    };
+    let st = run_with_config(
+        &parse("@operation(\"X\")\nfunc f() { f(); }\nf();").unwrap(),
+        cfg,
+    );
+    assert!(st.runtime_error.as_deref().unwrap().contains("call depth"));
+    assert!(!st.ended_by_elections); // an eval error is NOT the in-world halt (I6)
+}
+
+#[test]
+fn call_depth_guard_stops_infinite_poly_recursion() {
+    // Feature B — a self-invoking poly-statement is bounded by the same guard.
+    let cfg = RuntimeConfig {
+        max_depth: 64,
+        ..RuntimeConfig::default()
+    };
+    let st = run_with_config(
+        &parse("@operation(\"X\")\nstatement s { to domestic { s; } }\naddress(domestic) { s; }")
+            .unwrap(),
+        cfg,
+    );
+    assert!(st.runtime_error.as_deref().unwrap().contains("call depth"));
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
 fn bribe_saturates_instead_of_overflowing() {
     // Regression: a huge bribe must not panic (debug) / wrap (release) the ledger.
     let st = run_src("@operation(\"Guardian of the Walls\")\nbribe(x, 9223372036854775807);");
     assert_eq!(st.core, i64::MAX); // 3 + i64::MAX saturates
     assert!(st.runtime_error.is_none());
+}
+
+#[test]
+fn postpone_does_not_panic_when_core_underflows() {
+    // Regression: two saturating bribes drive core to i64::MIN; `postpone`/`tick` must use
+    // saturating arithmetic (like `bribe`) and never panic on overflow (debug overflow
+    // checks). The government falls (core <= 0), but there is no host panic (§12).
+    let st = run_src(
+        "@operation(\"Protective Edge\")\n\
+         let a = allocate(thing);\n\
+         bribe(a, -9223372036854775807);\n\
+         bribe(a, -9223372036854775807);\n\
+         postpone();",
+    );
+    assert!(st.core <= 0);
+    assert!(st.ended_by_elections);
+    assert!(st.runtime_error.is_none()); // a controlled fall, not a fault
 }
 
 #[test]

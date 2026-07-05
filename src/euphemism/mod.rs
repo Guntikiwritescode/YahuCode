@@ -154,7 +154,18 @@ pub const PRE_CONTEXT: &[&str] = &["occupation", "blockade", "siege", "nakba", "
 /// Contested legal/political characterizations that must never be stated as settled
 /// fact in the tool's own voice (guardrail G5 / invariant I7). Used by the compile-time
 /// `E-CONTESTED` check (types/) and the emitter's I7 chokepoint (emit/).
-pub const CONTESTED_TERMS: &[&str] = &["apartheid", "genocide", "most moral army"];
+///
+/// The West-Bank-settlements characterization is split deliberately (Feature D, §16
+/// anchor): the DOMESTIC-illegality-then-legalization pattern is the *non-contested*
+/// factual core the `legislate` joke rests on, so only the INTERNATIONAL-law framing
+/// ("illegal under international law") is listed here as contested — it must carry a
+/// CONTESTED flag wherever rendered, exactly like `apartheid`/`genocide`.
+pub const CONTESTED_TERMS: &[&str] = &[
+    "apartheid",
+    "genocide",
+    "most moral army",
+    "illegal under international law",
+];
 
 /// Look up an entity's differential-access category (default `"A"`).
 pub fn category_of(entity: &str) -> &'static str {

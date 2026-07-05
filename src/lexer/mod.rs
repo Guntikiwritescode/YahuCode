@@ -23,6 +23,7 @@ pub enum Tok {
     RBrace,
     Comma,
     Semi,
+    Colon,
     Eq,
     /// a `# …` line comment (its trimmed text)
     Comment(String),
@@ -293,6 +294,13 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 i += 1;
                 out.push(Token {
                     tok: Tok::Semi,
+                    line,
+                });
+            }
+            ':' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Colon,
                     line,
                 });
             }

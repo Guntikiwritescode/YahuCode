@@ -1,0 +1,9 @@
+@operation("Iron Law")
+# Feature D — legislate: facts on the ground first; the law catches up.
+# An ungated clearing op runs, then the rule is changed to make it retroactively lawful;
+# a false claim's discrepancy is expunged from the public count — but the meta-ledger
+# keeps every rule-change forever (I12: no fully-clean fixed point).
+clear(hilltop);
+legislate(retroactively_sanction: clear);
+declare(outposts == 0);
+legislate(expunge_last_discrepancy);

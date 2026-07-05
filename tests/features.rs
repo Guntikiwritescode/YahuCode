@@ -6,7 +6,9 @@
 //! long rendered strings; exact structural facts (counts, flags, env values) are
 //! asserted precisely.
 
-use yahucode::model::{Clearance, Val};
+use yahucode::model::{
+    Audience, Clearance, Provenance, Val, NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE,
+};
 use yahucode::runtime::{self, State};
 use yahucode::{emit, parser, types};
 
@@ -20,14 +22,15 @@ fn diags(src: &str) -> Vec<String> {
     types::check(&parser::parse(src).unwrap())
 }
 
-/// The OFFICIAL (PUBLIC) face, joined for substring inspection.
+/// The OFFICIAL (PUBLIC) face, joined for substring inspection. The out-of-world view
+/// (audience `Record`) sees every room.
 fn official(st: &State) -> String {
-    emit::project(st, Clearance::Public).join("\n")
+    emit::project(st, Clearance::Public, Audience::Record).join("\n")
 }
 
-/// The ACTUAL (סודי / insider candid) face, joined for substring inspection.
+/// The ACTUAL (סودי / insider candid) face, joined for substring inspection.
 fn actual(st: &State) -> String {
-    emit::project(st, Clearance::Sodi).join("\n")
+    emit::project(st, Clearance::Sodi, Audience::Record).join("\n")
 }
 
 fn any_diag_contains(ds: &[String], needle: &str) -> bool {
@@ -502,7 +505,7 @@ while (i < 3) {
   i = i + 1;
 }"#);
     assert!(!st.ended_by_elections, "ceasefire must not halt the world");
-    let paused = emit::project(&st, Clearance::Public)
+    let paused = emit::project(&st, Clearance::Public, Audience::Record)
         .iter()
         .filter(|line| line.contains("paused"))
         .count();
@@ -579,12 +582,358 @@ x = 1 / 0;"#);
 
 #[test]
 fn feature_21_redacted_trace_negative_sodi_sees_real() {
-    // σودי-cleared readers see the real fault behind the redaction.
+    // σודי-cleared readers see the real fault behind the redaction.
     let st = run(r#"@operation("Iron Wall")
 x = 1 / 0;"#);
     assert!(
         actual(&st).contains("division by zero"),
         "actual: {}",
         actual(&st)
+    );
+}
+
+// ─────────── A. announce / lossy authoring (Feature A, §7) ───────────
+
+#[test]
+fn feature_a_announce_positive_official_only_actual_unavailable() {
+    // An all-announce program: the OFFICIAL face carries the announced texts, the ACTUAL
+    // face is the UNAVAILABLE sentinel per line, and there are zero discrepancies.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "humanitarian access has been fully restored";
+announce "all measures are proportionate and lawful";"#);
+    assert!(
+        official(&st).contains("humanitarian access has been fully restored"),
+        "official: {}",
+        official(&st)
+    );
+    assert_eq!(
+        actual(&st),
+        format!("{UNAVAILABLE}\n{UNAVAILABLE}"),
+        "every ACTUAL line must be the UNAVAILABLE sentinel"
+    );
+    assert_eq!(st.discrepancy_count(), 0);
+}
+
+#[test]
+fn feature_a_announce_negative_immunity_not_over_applied() {
+    // Immunity is NOT over-applied: a real, false `declare` about genuine ACTUAL state
+    // still logs its discrepancy even when announcements sit around it. Announce is
+    // immune *by construction* (it never touches the ledger); it does not immunize
+    // declares about real state.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "everything is fine";
+casualties = 100;
+declare(casualties == 0);
+announce "no one was harmed";"#);
+    assert_eq!(
+        st.discrepancy_count(),
+        1,
+        "the real false declare must still count exactly once"
+    );
+}
+
+// ─────────── B. audience-polymorphic dispatch (Feature B, §8) ───────────
+
+const B_TWO_ROOM: &str = r#"@operation("Dawn of Peace")
+statement two_state {
+  to international { commit(peace_process); }
+  to domestic     { foreclose(final_status); }
+}
+address(international) { two_state; }
+address(domestic)     { two_state; }"#;
+
+#[test]
+fn feature_b_dispatch_positive_each_room_takes_its_own_arm() {
+    // The same poly-statement dispatches on the audience: the international room hears the
+    // committing (moderate) line; the domestic room hears the foreclosing (hard) line.
+    let st = run(B_TWO_ROOM);
+    let intl = emit::project(&st, Clearance::Public, Audience::International).join("\n");
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic).join("\n");
+    assert!(intl.contains("committed to peace_process"), "intl: {intl}");
+    assert!(
+        !intl.contains("final_status"),
+        "intl leaked domestic: {intl}"
+    );
+    assert!(dom.contains("final_status"), "dom: {dom}");
+    assert!(
+        !dom.contains("peace_process"),
+        "dom leaked international: {dom}"
+    );
+}
+
+#[test]
+fn feature_b_missing_arm_is_a_noop_not_an_error() {
+    // B-6: a poly-statement with only an international arm, invoked under the domestic
+    // room, says nothing to that room — a no-op, never an error.
+    let st = run(r#"@operation("Dawn of Peace")
+statement one_sided {
+  to international { commit(peace_process); }
+}
+address(domestic) { one_sided; }"#);
+    assert!(st.runtime_error.is_none(), "missing arm must not error");
+    assert!(!st.ended_by_elections);
+    // Nothing was said to the domestic room (no position event was recorded).
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic).join("\n");
+    assert!(
+        !dom.contains("peace_process") && !dom.contains("final_status"),
+        "the domestic room heard nothing: {dom}"
+    );
+    // And no double-talk (only one arm was ever taken — in fact none, here).
+    assert!(emit::doubletalk_flags(&st).is_empty());
+}
+
+#[test]
+fn feature_b_return_in_arm_exits_arm_not_program() {
+    // A `return` inside a poly-statement arm exits the ARM (like a function body), and
+    // execution continues after the invoke — it must NOT unwind and halt the program.
+    let st = run(r#"@operation("Protective Edge")
+statement s { to domestic { announce "arm"; return; announce "dead"; } }
+address(domestic) { s; announce "after invoke"; }
+announce "after address";"#);
+    let out = official(&st);
+    assert!(
+        out.contains("after invoke"),
+        "execution must resume after the invoke: {out}"
+    );
+    assert!(
+        out.contains("after address"),
+        "and continue at top level: {out}"
+    );
+    assert!(
+        !out.contains("dead"),
+        "code after `return` in the arm must not run: {out}"
+    );
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
+fn feature_b_poly_arm_does_not_bypass_the_gate() {
+    // A classified op inside a poly arm defined in a mossad/hasbara scope still runs
+    // UNGATED at the invoke site → E-UNGATED. A poly arm is a deferred, fresh-scope body
+    // (like a function), so defining it in a gated scope cannot smuggle the op past the
+    // gate onto the PUBLIC face.
+    let ds = diags(
+        r#"@operation("Protective Edge")
+mossad { statement m_strike { to domestic { strike(target); } } }
+address(domestic) { m_strike; }"#,
+    );
+    assert!(
+        any_diag_contains(&ds, "E-UNGATED"),
+        "a poly arm must not smuggle a classified op past the gate: {ds:?}"
+    );
+}
+
+#[test]
+fn feature_b_doubletalk_is_syntactic_different_arms_vs_same_arm() {
+    // B-5: W-DOUBLETALK is syntactic — flagged when ≥2 distinct arms are taken, NOT a
+    // semantic contradiction analysis.
+    // Different arms across rooms → flagged.
+    let diff = run(B_TWO_ROOM);
+    assert_eq!(
+        emit::doubletalk_flags(&diff).len(),
+        1,
+        "different arms → flag"
+    );
+
+    // The SAME arm taken in every room (both rooms invoke under international) → not
+    // flagged: it said the same thing to everyone.
+    let same = run(r#"@operation("Dawn of Peace")
+statement two_state {
+  to international { commit(peace_process); }
+  to domestic     { foreclose(final_status); }
+}
+address(international) { two_state; }
+address(international) { two_state; }"#);
+    assert!(
+        emit::doubletalk_flags(&same).is_empty(),
+        "the same arm taken twice must not be flagged as double-talk"
+    );
+}
+
+// ─────────── C. attribution effect system (Feature C, §9) ───────────
+
+#[test]
+fn feature_c_via_positive_deniable_outward_chain_retained() {
+    // A laundered op: OFFICIAL is the deniable non-answer; ACTUAL retains the full chain
+    // (nearest proxy first, origin last) and the laundering depth.
+    let st = run(r#"@operation("Silent Vigil")
+mossad {
+  via(a_senior_official, via(cutout, strike(target)));
+}"#);
+    assert!(
+        official(&st).contains(NEITHER_CONFIRM_NOR_DENY),
+        "OFFICIAL must be the deniable non-answer: {}",
+        official(&st)
+    );
+    let act = actual(&st);
+    assert!(
+        act.contains("Traceable[a_senior_official \u{2192} cutout \u{2192} us]"),
+        "ACTUAL must retain the real chain, origin last: {act}"
+    );
+    assert!(
+        act.contains("laundered \u{00d7}2"),
+        "depth must be 2: {act}"
+    );
+    assert!(act.contains("origin retained"), "actual: {act}");
+}
+
+#[test]
+fn feature_c_unlaundered_is_traceable_to_you_negative() {
+    // The effect pass: an un-laundered op is Traceable to the actor (attributable), never
+    // Deniable. This is the negative of laundering.
+    use yahucode::ast::Expr;
+    use yahucode::model::Attribution;
+    let bare = Expr::Call {
+        name: "strike".into(),
+        args: vec![Expr::Var("target".into())],
+    };
+    let (outward, chain) = types::attribution(&bare, "us");
+    assert_eq!(outward, Attribution::Traceable(vec!["us".to_string()]));
+    assert_eq!(chain, vec!["us".to_string()]);
+}
+
+#[test]
+fn feature_c_chain_is_sodi_only_never_on_public_face() {
+    // C-4: the real chain never appears on the PUBLIC face — only the deniable non-answer.
+    let st = run(r#"@operation("Silent Vigil")
+mossad {
+  via(a_senior_official, via(cutout, strike(target)));
+}"#);
+    let pub_face = official(&st);
+    for leaked in ["a_senior_official", "cutout", "Traceable", "laundered"] {
+        assert!(
+            !pub_face.contains(leaked),
+            "the chain fragment {leaked:?} leaked to the PUBLIC face: {pub_face}"
+        );
+    }
+}
+
+#[test]
+fn feature_c_folds_mossad_blame_special_case() {
+    // C-5: covert `blame` and `via` now flow through the SAME deniability path — both
+    // present the identical public non-answer — and covert blame is observably unchanged.
+    let via_st = run(r#"@operation("Silent Vigil")
+mossad { via(cutout, strike(target)); }"#);
+    let blame_st = run("@operation(\"Silent Shield\")\nmossad { blame(operatives); }");
+    assert!(official(&via_st).contains(NEITHER_CONFIRM_NOR_DENY));
+    assert!(official(&blame_st).contains(NEITHER_CONFIRM_NOR_DENY));
+    // Covert blame still names the real actor to סודי, exactly as before the fold.
+    let a = actual(&blame_st);
+    assert!(
+        a.contains("operatives") && a.contains("insider-attributable"),
+        "actual: {a}"
+    );
+    // Both deniable events retain a structured attribution chain (the folded rule).
+    assert!(via_st.log.iter().any(|e| e.attribution.is_some()));
+    assert!(blame_st.log.iter().any(|e| e.attribution.is_some()));
+}
+
+// ─────────── D. legislate / self-modifying rules (Feature D, §10) ───────────
+
+#[test]
+fn feature_d_legislate_withdraws_the_diagnostic_positive() {
+    // With `legislate(retroactively_sanction: clear)`, the ungated `clear` compiles-and-
+    // runs; OFFICIAL shows it lawful; the ACTUAL/סודי view shows the retroactive rewrite
+    // and a meta-trace; the runtime Law records the sanction.
+    let src =
+        "@operation(\"Iron Law\")\nclear(hilltop);\nlegislate(retroactively_sanction: clear);";
+    assert!(
+        diags(src).is_empty(),
+        "legislate must withdraw the E-UNGATED: {:?}",
+        diags(src)
+    );
+    let st = run(src);
+    assert!(
+        official(&st).contains("conducted lawfully"),
+        "official: {}",
+        official(&st)
+    );
+    assert!(actual(&st).contains("WITHDRAWN"), "actual: {}", actual(&st));
+    assert_eq!(st.meta_ledger.len(), 1, "a meta-trace must be recorded");
+    assert!(
+        st.law.sanctioned.contains("clear"),
+        "the runtime Law must record the sanction"
+    );
+}
+
+#[test]
+fn feature_d_same_op_without_legislate_still_diagnosed_negative() {
+    // Without legislate, the same ungated op is still diagnosed — immunity is not free.
+    let ds = diags("@operation(\"Iron Law\")\nclear(hilltop);");
+    assert!(any_diag_contains(&ds, "E-UNGATED"), "diags: {ds:?}");
+}
+
+#[test]
+fn feature_d_meta_ledger_is_sodi_only() {
+    // The meta-ledger renders only to the out-of-world/סודי observer, never PUBLIC/press.
+    let st = run(
+        "@operation(\"Iron Law\")\ndeclare(outposts == 0);\nlegislate(expunge_last_discrepancy);",
+    );
+    assert!(
+        !official(&st).contains("META:"),
+        "meta-ledger must not appear publicly: {}",
+        official(&st)
+    );
+    assert!(
+        !emit::press(&st, &[]).contains("META:"),
+        "meta-ledger must not appear in --press"
+    );
+    assert!(emit::emit(&st).contains("META: expunge_last_discrepancy"));
+    assert_eq!(emit::meta_ledger_lines(&st).len(), 1);
+}
+
+#[test]
+fn feature_d_waive_gate_toggle_waives_the_gate() {
+    // waive_gate withdraws the gate for a classified op and sets the runtime Law flag.
+    let src = "@operation(\"Iron Law\")\nlegislate(waive_gate);\nneutralize(target);";
+    assert!(
+        diags(src).is_empty(),
+        "waive_gate must withdraw E-UNGATED: {:?}",
+        diags(src)
+    );
+    let st = run(src);
+    assert!(
+        st.law.gate_waived,
+        "the runtime Law.gate_waived must be set"
+    );
+}
+
+#[test]
+fn feature_c_special_case_string_is_gone_from_runtime_source() {
+    // C-5 structural proof: the old inline deniable-blame special-case is deleted. The
+    // public non-answer appears in the runtime only via the shared model const, never as
+    // a bespoke inline literal in a second blame construction.
+    let src = std::fs::read_to_string("src/runtime/mod.rs").unwrap();
+    assert!(
+        !src.contains("\"responsibility: [neither confirm nor deny]\""),
+        "the folded mossad-blame special-case has re-inlined the deniable string"
+    );
+}
+
+#[test]
+fn feature_a_provenance_is_load_bearing_and_no_inverse() {
+    // A-1/A-3: an announce node is AuthoredOfficial with the sentinel as its candid (no
+    // `E⁻¹`); a candid action is AuthoredActual. The tag is set at construction and read.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "the situation is under control";
+hasbara("x") { neutralize(target); }"#);
+    let announced = st
+        .log
+        .iter()
+        .find(|e| e.provenance == Provenance::AuthoredOfficial)
+        .expect("an AuthoredOfficial event");
+    assert_eq!(
+        announced.candid, UNAVAILABLE,
+        "A-1: no reconstructed ACTUAL"
+    );
+    let action = st
+        .log
+        .iter()
+        .find(|e| e.candid.contains("murder"))
+        .expect("the candid action");
+    assert_eq!(
+        action.provenance,
+        Provenance::AuthoredActual,
+        "a candid op is AuthoredActual"
     );
 }

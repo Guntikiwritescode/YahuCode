@@ -53,6 +53,26 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/11_pillar_of_defense.yahu",
         "tests/golden/example_11.emit",
     ),
+    // Feature A (§7) — the announce register: OFFICIAL-only, ACTUAL is UNAVAILABLE (D.1).
+    (
+        "examples/12_dawn_of_calm.yahu",
+        "tests/golden/example_12.emit",
+    ),
+    // Feature B (§8) — audience double-talk: two rooms, two lines, W-DOUBLETALK (D.2).
+    (
+        "examples/13_dawn_of_peace.yahu",
+        "tests/golden/example_13.emit",
+    ),
+    // Feature C (§9) — laundering depth: Deniable outward, chain retained סודי (D.3).
+    (
+        "examples/14_silent_vigil.yahu",
+        "tests/golden/example_14.emit",
+    ),
+    // Feature D (§10) — legislate: retroactive legalization + indelible meta-trace (D.4).
+    (
+        "examples/15_rule_of_law.yahu",
+        "tests/golden/example_15.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

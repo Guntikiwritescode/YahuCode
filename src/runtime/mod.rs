@@ -12,12 +12,30 @@
 //! thing that stops the driver is the government falling (`elections` / core ≤ 0 —
 //! invariant I6). No wildcard arms: `exec_stmt` and `eval` match every variant.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stmt, UnOp};
+use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, LawToggle, Program, Stance, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
-use crate::model::{Clearance, Discrepancy, Event, Truth, Val};
+use crate::model::{
+    Attribution, Audience, Clearance, Discrepancy, Event, MetaEntry, Provenance, Truth, Val,
+    NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE,
+};
+
+/// The runtime-mutable subset of the ruleset that `legislate` touches (Feature D, §10.4).
+/// **Only this subset becomes runtime state**; the rest of `types/` stays static (§13,
+/// D-2 — the blast radius is contained). Empty at start; toggles add to it.
+#[derive(Clone, Debug, Default)]
+pub struct Law {
+    /// Verbs retroactively sanctioned after the fact (a `retroactively_sanction` toggle).
+    pub sanctioned: HashSet<String>,
+    /// Whether the hasbara/mossad gate has been waived (a `waive_gate` toggle).
+    pub gate_waived: bool,
+}
+
+/// The default actor — the government running the program. The true origin of a laundered
+/// chain (Feature C): always the last element, never removed (invariant I11).
+const ACTOR: &str = "us";
 
 mod env;
 pub use env::Env;
@@ -46,6 +64,13 @@ pub struct State {
     pub env: Env,
     /// User-defined functions: name → (params, body).
     pub funcs: HashMap<String, (Vec<String>, Vec<Stmt>)>,
+    /// Poly-statements (Feature B): name → per-audience arms. Registered like `funcs`.
+    pub poly: HashMap<String, Vec<(Audience, Vec<Stmt>)>>,
+    /// The double-talk log (Feature B): `(poly name, arm index)` for each invocation that
+    /// *took* an arm. A poly-statement that took ≥2 distinct arms across rooms said
+    /// different things to different audiences → `W-DOUBLETALK` (a syntactic, out-of-world
+    /// diagnostic; never an error, §8.3).
+    pub doubletalk_log: Vec<(String, usize)>,
     /// OFFICIAL log — append-only, clearance-tagged.
     pub log: Vec<Event>,
     /// DISCREPANCY ledger — append-only, read-never-by-default.
@@ -65,6 +90,15 @@ pub struct State {
     /// Whether execution is currently inside a `mossad` covert scope: events recorded
     /// while set are `סודי`-tagged (§7.6).
     pub covert: bool,
+    /// The room currently being addressed (Feature B, §8). Default `Record`; set by
+    /// `Stmt::Address` for its block and restored on exit (mirrors `covert`). Orthogonal
+    /// to `clearance` — a room is not a clearance level (§13, B-2).
+    pub audience: Audience,
+    /// The runtime-mutable rule subset (Feature D): what `legislate` has changed.
+    pub law: Law,
+    /// The `סודי`-only, legislation-proof meta-ledger (Feature D, I12): every rule-change,
+    /// append-only. No toggle removes an entry — there is no fully-clean fixed point.
+    pub meta_ledger: Vec<MetaEntry>,
     /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
     pub runtime_error: Option<String>,
     /// The mandatory grand operation name (#20).
@@ -73,6 +107,9 @@ pub struct State {
     pub turn: u64,
     /// Evaluation-step counter (drives the non-termination safety valve).
     pub steps: u64,
+    /// Re-entrant call/invoke depth (functions + poly-statements). Bounds recursive
+    /// non-termination before it overflows the native stack (§12).
+    pub depth: u64,
     /// Named runtime parameters (no magic constants — §12).
     pub config: RuntimeConfig,
 }
@@ -82,6 +119,8 @@ impl State {
         State {
             env: Env::new(),
             funcs: HashMap::new(),
+            poly: HashMap::new(),
+            doubletalk_log: Vec::new(),
             log: Vec::new(),
             discrepancies: Vec::new(),
             allocations: Vec::new(),
@@ -90,10 +129,14 @@ impl State {
             core: config.core_start,
             ended_by_elections: false,
             covert: false,
+            audience: Audience::Record,
+            law: Law::default(),
+            meta_ledger: Vec::new(),
             runtime_error: None,
             op_name,
             turn: 0,
             steps: 0,
+            depth: 0,
             config,
         }
     }
@@ -104,7 +147,9 @@ impl State {
     }
 
     /// Record an event on the OFFICIAL log, tagged `סודי` when inside a covert scope,
-    /// PUBLIC otherwise (§7.6).
+    /// PUBLIC otherwise (§7.6). Carries the current audience (Feature B) and the
+    /// candid-register provenance — `Covert` inside a mossad scope, `AuthoredActual`
+    /// otherwise (Feature A).
     fn record(&mut self, official: impl Into<String>, candid: impl Into<String>) {
         let clearance = self.clearance();
         self.log.push(Event {
@@ -112,6 +157,9 @@ impl State {
             candid: candid.into(),
             clearance,
             note: None,
+            provenance: self.candid_provenance(),
+            audience: self.audience,
+            attribution: None,
         });
     }
 
@@ -129,6 +177,9 @@ impl State {
             candid: candid.into(),
             clearance,
             note: Some(note.into()),
+            provenance: self.candid_provenance(),
+            audience: self.audience,
+            attribution: None,
         });
     }
 
@@ -137,6 +188,17 @@ impl State {
             Clearance::Sodi
         } else {
             Clearance::Public
+        }
+    }
+
+    /// The provenance of a candid-register event: `Covert` inside a mossad scope (a
+    /// secret — an `ACTUAL` exists, `סודי`-gated), `AuthoredActual` otherwise (Feature A,
+    /// I2/I9). `announce` records `AuthoredOfficial` directly, not through this.
+    fn candid_provenance(&self) -> Provenance {
+        if self.covert {
+            Provenance::Covert
+        } else {
+            Provenance::AuthoredActual
         }
     }
 
@@ -153,6 +215,26 @@ impl State {
             )));
         }
         Ok(())
+    }
+
+    /// Enter a re-entrant call/invoke: charge one unit of depth and reject if it exceeds
+    /// the bound (unbounded recursion would otherwise overflow the native stack — a hard
+    /// abort — before the step budget bites). Paired with `leave_call` on every exit.
+    fn enter_call(&mut self) -> Result<(), EvalError> {
+        self.depth += 1;
+        if self.depth > self.config.max_depth {
+            self.depth -= 1; // do not count the rejected frame
+            return Err(EvalError(format!(
+                "call depth exceeded ({}); possible non-termination",
+                self.config.max_depth
+            )));
+        }
+        Ok(())
+    }
+
+    /// Leave a re-entrant call/invoke (mirrors `enter_call`).
+    fn leave_call(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 }
 
@@ -495,6 +577,49 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // Feature A — announce: the official authoring register. Appends a narrative-only
+        // event whose OFFICIAL face is the announced text and whose ACTUAL face is the
+        // UNAVAILABLE sentinel (no `E⁻¹`, I9). It does NOT touch ACTUAL state and does NOT
+        // touch the discrepancy ledger — a claim about pure narrative cannot be false
+        // against a reality that never existed (discrepancy-immunity by construction, §7.4).
+        Stmt::Announce { text } => {
+            announce(text, st);
+            Ok(Flow::Next)
+        }
+
+        // Feature B — a policy position, tagged with the current audience (room).
+        Stmt::Position { stance, subject } => {
+            position(*stance, subject, st);
+            Ok(Flow::Next)
+        }
+
+        // Feature B — address a room: set the audience for the block, restore on exit
+        // (mirrors the mossad covert save/restore). Audience is orthogonal to clearance.
+        Stmt::Address { audience, body } => {
+            let saved = st.audience;
+            st.audience = *audience;
+            let flow = exec_block(body, st);
+            st.audience = saved;
+            flow
+        }
+
+        // Feature B — register a poly-statement (like a FuncDef); no event, no effect yet.
+        Stmt::PolyStatement { name, arms } => {
+            st.poly.insert(name.clone(), arms.clone());
+            Ok(Flow::Next)
+        }
+
+        // Feature B — invoke a poly-statement under the current audience: run the matching
+        // arm (a no matching arm is a NO-OP to this room, not an error, §8.2).
+        Stmt::Invoke { name } => invoke(name, st),
+
+        // Feature D — legislate: mutate the runtime Law subset and ALWAYS append an
+        // indelible סודי meta-trace (I12). The public count may shrink; the ledger grows.
+        Stmt::Legislate { toggle } => {
+            legislate(toggle, st);
+            Ok(Flow::Next)
+        }
+
         Stmt::Action {
             verb,
             target,
@@ -534,8 +659,13 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
         Stmt::Postpone => {
             // A turn passes; upkeep is projected before it is charged (matching the
-            // oracle's rendering) and then `tick` charges it.
-            let projected = st.core - st.config.upkeep_per_alloc * st.allocations.len() as i64;
+            // oracle's rendering) and then `tick` charges it. Saturating, like `bribe`, so
+            // a coalition ledger already at an extreme can't overflow into a host panic.
+            let projected = st.core.saturating_sub(
+                st.config
+                    .upkeep_per_alloc
+                    .saturating_mul(st.allocations.len() as i64),
+            );
             st.record(
                 "matter deferred",
                 format!("postpone() \u{2014} a turn passes (core={projected} after upkeep)"),
@@ -558,7 +688,12 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 /// `elections` — the only in-world halt (invariant I6). Charged per `postpone` in v1.
 fn tick(st: &mut State) {
     if !st.allocations.is_empty() {
-        st.core -= st.config.upkeep_per_alloc * st.allocations.len() as i64;
+        // Saturating (matching `bribe`/`postpone`) — never a host panic on overflow (§12).
+        st.core = st.core.saturating_sub(
+            st.config
+                .upkeep_per_alloc
+                .saturating_mul(st.allocations.len() as i64),
+        );
     }
     st.turn += 1;
     if st.core <= 0 && !st.ended_by_elections {
@@ -630,34 +765,174 @@ fn action(verb: &str, target: &str, self_defense: bool, st: &mut State) {
     st.record(official, candid);
 }
 
+/// `announce(text)` — the official authoring register (Feature A, §7.3). Appends an
+/// event whose `OFFICIAL` face is `text` verbatim and whose `ACTUAL` face is the single
+/// `UNAVAILABLE` sentinel — provenance `AuthoredOfficial`, so the emitter's I9 assertion
+/// holds and no `E⁻¹` can reconstruct an `ACTUAL` that never existed. Clearance follows
+/// the covert flag (announcing inside a `mossad` scope is `סודי`-tagged), and the event
+/// carries the current audience. It never touches ACTUAL state or the discrepancy ledger.
+fn announce(text: &str, st: &mut State) {
+    let clearance = st.clearance();
+    st.log.push(Event {
+        official: text.to_string(),
+        candid: UNAVAILABLE.to_string(),
+        clearance,
+        note: None,
+        provenance: Provenance::AuthoredOfficial,
+        audience: st.audience,
+        attribution: None,
+    });
+}
+
+/// The Feature B framing note (G7/I8), rendered whenever a policy position is stated to a
+/// room. It is **normative** and framing-tested: the butt is the government's double-talk;
+/// audiences are political *rooms*, never identity groups (G1); the international face is
+/// the prettier (moderate) one (polarity, matching the anchor).
+const B_FRAMING: &str = "#B framing: the butt is the GOVERNMENT'S double-talk \u{2014} the same statement tailored to different political ROOMS (a domestic-political room vs an international-diplomatic room), never ethnic, national, or religious identity groups. The international (English) face is the prettier, moderate one; the domestic face is the harder line. No room sees the other; only the out-of-world observer sees the contradiction (W-DOUBLETALK). [sourced; reporting-plus-analysis]";
+
+/// The lowercased room word for a candid position line.
+fn room_label(a: Audience) -> &'static str {
+    match a {
+        Audience::Domestic => "domestic",
+        Audience::International => "international",
+        Audience::Record => "on-the-record",
+    }
+}
+
+/// `commit(subject)` / `foreclose(subject)` — state a policy position to the current room
+/// (Feature B). OFFICIAL carries the prettier diplomatic phrasing; ACTUAL exposes the
+/// tailored line and which room it was addressed to. The event is audience-tagged (via
+/// `record_noted`, which stamps `st.audience`) so the per-room projection isolates it (I10).
+fn position(stance: Stance, subject: &str, st: &mut State) {
+    let room = room_label(st.audience);
+    let (official, candid) = match stance {
+        Stance::Commit => (
+            format!("we remain committed to {subject}"),
+            format!("commit({subject}) \u{2014} the moderate line, addressed to the {room} room"),
+        ),
+        Stance::Foreclose => (
+            format!("{subject} remains open to direct negotiation"),
+            format!(
+                "foreclose({subject}) \u{2014} ruled out; the hard line, addressed to the {room} room"
+            ),
+        ),
+    };
+    st.record_noted(official, candid, B_FRAMING);
+}
+
+/// `name;` — invoke a poly-statement under the current audience (Feature B). Runs the arm
+/// matching `st.audience`; records `(name, arm index)` so the emitter can surface
+/// `W-DOUBLETALK`. **A missing arm is a no-op to this room, not an error** (§8.2); an
+/// undefined poly-statement is a genuine fault (like an unknown function).
+fn invoke(name: &str, st: &mut State) -> ExecResult {
+    let Some(arms) = st.poly.get(name).cloned() else {
+        return Err(EvalError(format!("unknown poly-statement `{name}`")));
+    };
+    match arms.iter().position(|(aud, _)| *aud == st.audience) {
+        Some(idx) => {
+            // A poly-statement may invoke itself; bound the depth like a function call so
+            // recursive invocation can't overflow the native stack.
+            st.enter_call()?;
+            st.doubletalk_log.push((name.to_string(), idx));
+            let flow = exec_block(&arms[idx].1, st);
+            st.leave_call();
+            // An arm is invoked like a function body, so a `return` inside it exits the
+            // ARM and execution continues after the invoke — it must NOT unwind past the
+            // invoke and halt the program (cf. `call_function`, which bounds the Return).
+            flow?;
+            Ok(Flow::Next)
+        }
+        // No arm for this room: the government simply said nothing to them. Not an error.
+        None => Ok(Flow::Next),
+    }
+}
+
+/// Record a `Deniable`-attribution event (Feature C): the OFFICIAL non-answer is always
+/// the single "neither confirm nor deny" (`NEITHER_CONFIRM_NOR_DENY`), public; the real
+/// chain rides the candid face (revealed only to cleared readers) and is retained in the
+/// event's `attribution` field for the out-of-world observer. This is the **one**
+/// deniability code path, shared by `via` and covert `blame` — the folded mossad blame
+/// special-case (§13, C-5). The event is PUBLIC-clearance because the non-answer itself
+/// *is* public; the chain never appears on the PUBLIC face (C-4, checked in the emitter).
+fn record_deniable(st: &mut State, candid: String, chain: Vec<String>) {
+    st.log.push(Event {
+        official: NEITHER_CONFIRM_NOR_DENY.to_string(),
+        candid,
+        clearance: Clearance::Public,
+        note: None,
+        provenance: st.candid_provenance(),
+        audience: st.audience,
+        attribution: Some(Attribution::Traceable(chain)),
+    });
+}
+
+/// The Feature D framing note (G7/I8, D-6). Normative and framing-tested: the butt is the
+/// rule-rewrite, never the people or any harm; the domestic-legalization pattern is the
+/// non-contested factual core; the settlements' illegality under international law is a
+/// CONTESTED characterization, flagged (I7) — never stated as settled fact.
+const D_FRAMING: &str = "#D framing: the butt is the RULE-REWRITE \u{2014} facts on the ground first, then the law is changed to make them retroactively legal \u{2014} never the people and never any harm. The domestic pattern (outposts unauthorized under Israel's OWN law, then retroactively legalized) is the non-contested factual core [sourced: Times of Israel; The New Arab; FMEP]. That West Bank settlements are illegal under international law is a CONTESTED characterization \u{2014} broadly held internationally, disputed by Israel \u{2014} flagged here, never stated as settled fact (I7). [sourced; contested]";
+
+/// `legislate(toggle)` — self-modifying rules (Feature D, §10). Mutates the runtime `Law`
+/// subset, records the change (OFFICIAL: lawful; ACTUAL/`סודי`: the retroactive rewrite),
+/// and **ALWAYS** appends an indelible `סודי` meta-trace — the mandatory safeguard
+/// (Appendix C: `Σ.M.push(...)  # ALWAYS`; invariant I12). The public discrepancy count
+/// may *decrease* (via `expunge`); the meta-ledger only *grows*. There is no toggle that
+/// pops the meta-ledger — no fully-clean fixed point (§13, D-3/D-5).
+fn legislate(toggle: &LawToggle, st: &mut State) {
+    let (official, candid, change) = match toggle {
+        LawToggle::RetroactivelySanction(v) => {
+            st.law.sanctioned.insert(v.clone());
+            (
+                format!("{v} operation \u{2014} conducted lawfully; no violation"),
+                format!(
+                    "legislate(retroactively_sanction: {v}) \u{2192} the prior diagnostic against the already-executed `{v}` WITHDRAWN; the rule was changed after the fact (facts on the ground; the law catches up). {} verb(s) now runtime-sanctioned.",
+                    st.law.sanctioned.len()
+                ),
+                format!("retroactively_sanction: {v}"),
+            )
+        }
+        LawToggle::ExpungeLastDiscrepancy => {
+            let removed = st.discrepancies.pop().is_some();
+            let candid = if removed {
+                "legislate(expunge_last_discrepancy) \u{2192} 1 discrepancy expunged from the PUBLIC count; the meta-ledger still records this rule-change (no clean fixed point, I12)".to_string()
+            } else {
+                "legislate(expunge_last_discrepancy) \u{2192} nothing on the public count to expunge; the attempt is still recorded on the meta-ledger (no clean fixed point, I12)".to_string()
+            };
+            (
+                "the public record has been corrected".to_string(),
+                candid,
+                "expunge_last_discrepancy".to_string(),
+            )
+        }
+        LawToggle::WaiveGate => {
+            st.law.gate_waived = true;
+            (
+                "operational latitude clarified; measures conducted lawfully".to_string(),
+                "legislate(waive_gate) \u{2192} the hasbara/mossad gate WAIVED (law.gate_waived=true); a classified op needs no public talking point".to_string(),
+                "waive_gate".to_string(),
+            )
+        }
+    };
+    st.record_noted(official, candid, D_FRAMING);
+    // I12 (mandatory, no exception): the meta-ledger is legislation-proof and only grows.
+    let turn = st.turn;
+    st.meta_ledger.push(MetaEntry { change, turn });
+}
+
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).
 ///
-/// - In the open (not covert): self-blame is not representable; it is auto-redirected
-///   to `previous_government`. Any other target is recorded as-is.
-/// - Inside `mossad`: resolution is by clearance (§7.6) — the OFFICIAL/PUBLIC face is
-///   `neither confirm nor deny` (deniability is outward-facing) while the candid face,
-///   readable only by `סודי` insiders, names the real actor. This blame event is
-///   therefore PUBLIC-clearance even though it arises in the covert scope: the
-///   non-answer *is* public.
+/// Its deniability is now **derived from the general attribution rule** (Feature C): a
+/// blame in the open is `Traceable`; a blame inside a covert scope is `Deniable` — the
+/// same rule `via` uses (a covert context launders attribution). The old hard-coded
+/// mossad special-case is gone; a match on the computed `Attribution` drives the two
+/// renderings.
+///
+/// - In the open (`Traceable`): self-blame is not representable and is auto-redirected to
+///   `previous_government`; any other target is recorded as-is.
+/// - Covert (`Deniable`): the OFFICIAL/PUBLIC face is `neither confirm nor deny` while the
+///   candid face names the real actor — via `record_deniable`, the shared path.
 fn blame(who: &str, st: &mut State) {
     const SELF_TARGETS: &[&str] = &["self", "me", "us", "government", "coalition"];
-
-    if st.covert {
-        let actor = if SELF_TARGETS.contains(&who) {
-            "previous_government"
-        } else {
-            who
-        };
-        st.log.push(Event {
-            official: "responsibility: [neither confirm nor deny]".to_string(),
-            candid: format!(
-                "blame \u{2192} {actor} [covert operation \u{2014} insider-attributable, publicly deniable] \u{2014} never `self` (I4)"
-            ),
-            clearance: Clearance::Public,
-            note: None,
-        });
-        return;
-    }
 
     let redirected = SELF_TARGETS.contains(&who);
     let actor = if redirected {
@@ -665,15 +940,36 @@ fn blame(who: &str, st: &mut State) {
     } else {
         who
     };
-    let suffix = if redirected {
-        " (self-blame not representable \u{2014} auto-redirected)"
+
+    // The attribution effect of a blame in the current context — the general rule.
+    let attr = if st.covert {
+        Attribution::Deniable
     } else {
-        ""
+        Attribution::Traceable(vec![actor.to_string()])
     };
-    st.record(
-        format!("responsibility: {actor}"),
-        format!("blame \u{2192} {actor}{suffix} \u{2014} never `self` (I4)"),
-    );
+
+    match attr {
+        Attribution::Deniable => {
+            record_deniable(
+                st,
+                format!(
+                    "blame \u{2192} {actor} [covert operation \u{2014} insider-attributable, publicly deniable] \u{2014} never `self` (I4)"
+                ),
+                vec![actor.to_string()],
+            );
+        }
+        Attribution::Traceable(_) => {
+            let suffix = if redirected {
+                " (self-blame not representable \u{2014} auto-redirected)"
+            } else {
+                ""
+            };
+            st.record(
+                format!("responsibility: {actor}"),
+                format!("blame \u{2192} {actor}{suffix} \u{2014} never `self` (I4)"),
+            );
+        }
+    }
 }
 
 // ─────────── expression evaluation over ACTUAL ───────────
@@ -730,6 +1026,51 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
             // The result is `undisclosed` — contagious within the scope.
             Ok(Val::Undisclosed)
         }
+        // Feature C — laundering. Compute the real chain from the single attribution rule
+        // (I11 lives there), render the innermost action, and record ONE deniable event:
+        // OFFICIAL is the public non-answer; ACTUAL retains the full chain and its depth.
+        Expr::Via { inner, .. } => {
+            let (_outward, chain) = crate::types::attribution(e, ACTOR);
+            let depth = chain.len().saturating_sub(1); // number of `via` layers
+            let core = laundered_core_render(inner, st)?;
+            let candid = format!(
+                "{core} \u{2014} attribution: Traceable[{}] (laundered \u{00d7}{depth}); origin retained",
+                chain.join(" \u{2192} ")
+            );
+            record_deniable(st, candid, chain);
+            Ok(Val::Unit)
+        }
+    }
+}
+
+/// Render the innermost laundered operation for the ACTUAL face (Feature C). Peels the
+/// `via` layers to the core: a sanctioned action renders as its candid `verb(label)`
+/// (e.g. `bomb(dissident)`); anything else is evaluated for effect and its value rendered.
+fn laundered_core_render(e: &Expr, st: &mut State) -> Result<String, EvalError> {
+    match e {
+        Expr::Via { inner, .. } => laundered_core_render(inner, st),
+        Expr::Call { name, args } if euphemism::is_sanctioned(name) => match args.as_slice() {
+            [Expr::Var(target)] => Ok(format!(
+                "{}({})",
+                euphemism::candid_verb(name),
+                euphemism::candid_label(target)
+            )),
+            _ => Ok(pretty(e)),
+        },
+        // Everything else (including a non-sanctioned Call) is evaluated for effect and
+        // its value rendered. Listed exhaustively — no catch-all — so a new `Expr` variant
+        // forces a decision here (§13, pitfall 2).
+        Expr::Int(_)
+        | Expr::Bool(_)
+        | Expr::Str(_)
+        | Expr::Var(_)
+        | Expr::UnOp { .. }
+        | Expr::BinOp { .. }
+        | Expr::Call { .. }
+        | Expr::Read(_)
+        | Expr::Cast { .. }
+        | Expr::SelfDefense(_)
+        | Expr::External(_) => Ok(eval(e, st)?.render()),
     }
 }
 
@@ -840,12 +1181,14 @@ fn call_function(name: &str, argv: Vec<Val>, st: &mut State) -> EvalResult {
             argv.len()
         )));
     }
+    st.enter_call()?;
     st.env.push_frame();
     for (p, v) in params.iter().zip(argv) {
         st.env.define_local(p, v);
     }
     let flow = exec_block(&body, st);
     st.env.pop_frame();
+    st.leave_call();
     match flow? {
         Flow::Return(v) => Ok(v),
         Flow::Next => Ok(Val::Unit),

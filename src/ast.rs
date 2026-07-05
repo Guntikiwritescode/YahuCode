@@ -27,6 +27,33 @@ pub enum InertKind {
     Polls,
 }
 
+/// The **closed** set of runtime rule-changes (Feature D, §10). No open-ended rule text,
+/// no reflection over the whole checker — only these enumerated toggles (§13, D-1), each
+/// matched exhaustively. The butt is the rule-rewrite, never any harm (guardrail G2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LawToggle {
+    /// `retroactively_sanction: verb` — sanction a previously-plain/unsanctioned/ungated
+    /// verb after the fact, so an already-executed operation is retroactively lawful.
+    RetroactivelySanction(String),
+    /// `expunge_last_discrepancy` — drop the last public discrepancy from the count.
+    ExpungeLastDiscrepancy,
+    /// `waive_gate` — allow a classified op outside a hasbara/mossad scope.
+    WaiveGate,
+}
+
+/// A policy *stance* (Feature B, §8): the closed set of positions a poly-statement arm
+/// can take on a policy subject. These are government *positions*, never about people
+/// (guardrail G1). The subject is a policy process (e.g. `peace_process`,
+/// `final_status`), never an identity group. Matched exhaustively.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stance {
+    /// `commit(subject);` — a committing/moderate position (the prettier, international-
+    /// facing line, per the anchor).
+    Commit,
+    /// `foreclose(subject);` — a ruling-out/hard-line position (the domestic-facing line).
+    Foreclose,
+}
+
 /// Unary operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnOp {
@@ -120,6 +147,15 @@ pub enum Expr {
     /// deterministic mock: it logs a declared effect and returns `undisclosed`
     /// (`neither_confirm_nor_deny`), which is contagious within the covert scope.
     External(Vec<Expr>),
+
+    /// `via(proxy, inner)` — the laundering operator (Feature C, §9). The outward
+    /// attribution is `Deniable`; the real chain **prepends** `proxy` to the inner
+    /// chain (nearest proxy first, true origin last). Laundering only ever adds a layer
+    /// — no operator shortens a chain or removes the origin (invariant I11).
+    Via {
+        proxy: String,
+        inner: Box<Expr>,
+    },
 }
 
 /// A statement. **Closed set** — matched exhaustively in `runtime/` (and `types/`).
@@ -271,6 +307,46 @@ pub enum Stmt {
     /// `address_international();` — a hollow address to the international community; a
     /// speech that changes nothing (a no-op, like `concern`).
     AddressInternational,
+
+    // ─── Feature A (§7): bidirectional / lossy authoring ───
+    /// `announce "…";` — the official authoring register. Writes only the `OFFICIAL`
+    /// face; the `ACTUAL` face is `UNAVAILABLE`, permanently (no `E⁻¹`, I9). Born with
+    /// `Provenance::AuthoredOfficial`. Narrative-only: it never touches the discrepancy
+    /// ledger, so a claim about pure narrative cannot generate a discrepancy (§7.4).
+    Announce { text: String },
+
+    // ─── Feature B (§8): audience-polymorphic dispatch ───
+    /// `commit(subject);` / `foreclose(subject);` — a policy *position* on a policy
+    /// subject, tagged with the audience currently being addressed. Government positions
+    /// only; the subject is a policy process, never a people (guardrail G1).
+    Position { stance: Stance, subject: String },
+
+    /// `address(audience) { … }` — set the audience (the political room) for a block and
+    /// restore it on exit (mirrors the `mossad` covert save/restore). `Record` (no room)
+    /// is never a writable target — only `Domestic`/`International`.
+    Address {
+        audience: crate::model::Audience,
+        body: Vec<Stmt>,
+    },
+
+    /// `statement name { to X { … } to Y { … } }` — a poly-statement: per-audience arms.
+    /// Invoking it under an audience runs the matching arm; the same statement does
+    /// different things to different rooms. Registered at runtime (like a `FuncDef`).
+    PolyStatement {
+        name: String,
+        arms: Vec<(crate::model::Audience, Vec<Stmt>)>,
+    },
+
+    /// `name;` — invoke a poly-statement under the current audience. Runs the matching
+    /// arm; **no matching arm is a no-op to that room, not an error** (§8.2).
+    Invoke { name: String },
+
+    // ─── Feature D (§10): legislate — self-modifying rules (de-scoped, closed) ───
+    /// `legislate(<toggle>);` — mutate the runtime `Law` subset: retroactively sanction a
+    /// verb, expunge the last public discrepancy, or waive the gate. **Every** legislate
+    /// appends an indelible `סודי` meta-trace (invariant I12 — no fully-clean fixed
+    /// point). The public discrepancy count may shrink; the meta-ledger only grows.
+    Legislate { toggle: LawToggle },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,
@@ -306,6 +382,8 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
                 collect_vars(a, out);
             }
         }
+        // The proxy is an attribution label, not a program variable; recurse the inner.
+        Expr::Via { inner, .. } => collect_vars(inner, out),
     }
 }
 
@@ -337,5 +415,6 @@ pub fn pretty(expr: &Expr) -> String {
             let a: Vec<String> = args.iter().map(pretty).collect();
             format!("external({})", a.join(", "))
         }
+        Expr::Via { proxy, inner } => format!("via({proxy}, {})", pretty(inner)),
     }
 }

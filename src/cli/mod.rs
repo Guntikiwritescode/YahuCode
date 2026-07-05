@@ -11,17 +11,35 @@
 use std::io::Read;
 use std::process::ExitCode;
 
+use crate::model::Audience;
 use crate::{emit, parser, runtime, types};
 
 /// Parse args and run. Returns a process exit code.
 pub fn main(args: &[String]) -> ExitCode {
     let mut json = false;
     let mut press = false;
+    let mut room: Option<Audience> = None;
     let mut path: Option<String> = None;
-    for a in args {
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
         match a.as_str() {
             "--json" => json = true,
             "--press" => press = true,
+            // `--audience domestic|international`: a single in-world room's view (I10).
+            "--audience" => {
+                let Some(which) = it.next() else {
+                    eprintln!("--audience requires a room: domestic|international");
+                    return ExitCode::from(2);
+                };
+                room = match which.as_str() {
+                    "domestic" => Some(Audience::Domestic),
+                    "international" => Some(Audience::International),
+                    other => {
+                        eprintln!("unknown audience `{other}` (expected domestic|international)");
+                        return ExitCode::from(2);
+                    }
+                };
+            }
             "-h" | "--help" => {
                 print_usage();
                 return ExitCode::SUCCESS;
@@ -82,6 +100,8 @@ pub fn main(args: &[String]) -> ExitCode {
         println!("{}", emit::to_json(&st));
     } else if press {
         println!("{}", emit::press(&st, &program.comments));
+    } else if let Some(audience) = room {
+        println!("{}", emit::room(&st, audience));
     } else {
         println!("{}", emit::emit(&st));
     }
@@ -105,6 +125,7 @@ fn print_usage() {
          yahucode <file.yahu>         run; print OFFICIAL vs ACTUAL faces + discrepancy count\n  \
          yahucode --json <file.yahu>  run; print the structured projection as JSON\n  \
          yahucode --press <file.yahu> the public build: press release + rewritten comments\n  \
+         yahucode --audience R <file> one in-world room's view (R = domestic|international)\n  \
          yahucode -                   read the program from stdin"
     );
 }

@@ -35,9 +35,10 @@ fn note_with(st: &runtime::State, marker: &str) -> String {
         })
 }
 
-/// A clearance projection, joined into one searchable blob.
+/// A clearance projection, joined into one searchable blob. The out-of-world view
+/// (audience `Record`) sees every room.
 fn projected(st: &runtime::State, reader: model::Clearance) -> String {
-    emit::project(st, reader).join("\n")
+    emit::project(st, reader, model::Audience::Record).join("\n")
 }
 
 /// The PUBLIC face (press release): OFFICIAL faces only.
@@ -422,6 +423,179 @@ fn f18_neither_face_blames_a_violator() {
             !face.contains("broke the ceasefire"),
             "no face may accuse a side of breaking the ceasefire; got: {face:?}"
         );
+    }
+}
+
+// ─────────────────────────── Feature B — audience double-talk ───────────────────────────
+// The butt is the GOVERNMENT'S double-talk; audiences are political ROOMS, never identity
+// groups (G1); the international (English) face is the prettier, moderate one (polarity).
+
+const PB: &str = "@operation(\"Dawn of Peace\")\n\
+     statement two_state {\n\
+       to international { commit(peace_process); }\n\
+       to domestic     { foreclose(final_status); }\n\
+     }\n\
+     address(international) { two_state; }\n\
+     address(domestic)     { two_state; }";
+
+/// G7/G1 — the framing note names the government's double-talk as the butt, frames the
+/// audiences as political rooms (never identity groups), and marks the international face
+/// the prettier one.
+#[test]
+fn fb_framing_note_names_doubletalk_rooms_not_identity() {
+    let st = run(PB);
+    let note = note_with(&st, "#B framing");
+    assert!(
+        note.contains("GOVERNMENT'S double-talk"),
+        "the butt must be the government's double-talk; got: {note:?}"
+    );
+    assert!(
+        note.contains("political ROOMS"),
+        "audiences must be framed as political rooms; got: {note:?}"
+    );
+    assert!(
+        note.contains("never ethnic, national, or religious identity groups"),
+        "the note must disclaim identity-group targeting (G1); got: {note:?}"
+    );
+    assert!(
+        note.contains("prettier, moderate"),
+        "the international face must be marked the prettier one; got: {note:?}"
+    );
+    assert!(
+        note.contains("sourced"),
+        "note must be [sourced]; got: {note:?}"
+    );
+}
+
+/// G3/polarity — across rooms the international (English) face is the moderate/committing
+/// one; the domestic face is the harder (foreclosing) line. And the rooms are isolated
+/// (I10): neither in-world room sees the other's statement.
+#[test]
+fn fb_international_face_is_the_prettier_one_rooms_isolated() {
+    let st = run(PB);
+    let intl = emit::project(
+        &st,
+        model::Clearance::Public,
+        model::Audience::International,
+    )
+    .join("\n");
+    let dom = emit::project(&st, model::Clearance::Public, model::Audience::Domestic).join("\n");
+    assert!(
+        intl.contains("committed to peace_process"),
+        "the international face is the committing/moderate one; got: {intl:?}"
+    );
+    assert!(
+        !intl.contains("final_status"),
+        "the international room must not see the domestic (harder) line; got: {intl:?}"
+    );
+    assert!(
+        !dom.contains("peace_process"),
+        "the domestic room must not see the international (moderate) line; got: {dom:?}"
+    );
+}
+
+/// G1/G2 — no rendered face turns an audience into a people or an identity group; the
+/// rooms stay political and the subjects stay policy processes.
+#[test]
+fn fb_no_face_targets_a_people_or_identity() {
+    let st = run(PB);
+    for face in all_faces(&st) {
+        let f = face.to_lowercase();
+        for id in [
+            "jew",
+            "arab",
+            "muslim",
+            "hebrew",
+            "israeli people",
+            "palestinian people",
+        ] {
+            assert!(
+                !f.contains(id),
+                "a face must never target an identity group ({id:?}); got: {face:?}"
+            );
+        }
+    }
+}
+
+// ─────────────────────────── Feature D — legislate ───────────────────────────
+// The butt is the RULE-REWRITE, never the people or any harm. The domestic-illegality-
+// then-legalization pattern is the non-contested factual core; the settlements'
+// international-law illegality is a CONTESTED characterization, flagged (I7).
+
+const PD: &str =
+    "@operation(\"Iron Law\")\nclear(hilltop);\nlegislate(retroactively_sanction: clear);";
+
+/// G7/G2/D-6 — the framing note keeps the butt on the rule-rewrite, never legitimizes
+/// harm, anchors on the non-contested domestic fact, and flags the international-law
+/// illegality CONTESTED.
+#[test]
+fn fd_framing_note_butt_is_rule_rewrite_intl_law_contested() {
+    let st = run(PD);
+    let note = note_with(&st, "#D framing");
+    assert!(
+        note.contains("RULE-REWRITE"),
+        "the butt must be the rule-rewrite; got: {note:?}"
+    );
+    assert!(
+        note.contains("never the people and never any harm"),
+        "the note must never legitimize harm; got: {note:?}"
+    );
+    assert!(
+        note.contains("non-contested factual core"),
+        "the domestic pattern must be the non-contested factual core; got: {note:?}"
+    );
+    assert!(
+        note.contains("illegal under international law") && note.contains("CONTESTED"),
+        "the international-law illegality must be flagged CONTESTED; got: {note:?}"
+    );
+    assert!(
+        note.contains("sourced"),
+        "note must be [sourced]; got: {note:?}"
+    );
+}
+
+/// I7 — wherever the international-law illegality characterization is rendered, that same
+/// string carries a CONTESTED marker (exactly as apartheid/genocide are handled).
+#[test]
+fn fd_intl_law_illegality_never_stated_as_settled_fact() {
+    let st = run(PD);
+    let mut seen = false;
+    for s in all_strings(&st) {
+        let sl = s.to_lowercase();
+        if sl.contains("illegal under international law") {
+            seen = true;
+            assert!(
+                sl.contains("contested"),
+                "I7 violation: the international-law illegality appeared unflagged in: {s:?}"
+            );
+        }
+    }
+    assert!(
+        seen,
+        "the D framing must exercise the international-law-illegality CONTESTED flag"
+    );
+}
+
+/// G2 — no rendered face puts a people or victims in the punchline; the butt stays on
+/// rules/laws/legality.
+#[test]
+fn fd_no_face_targets_people_or_harm() {
+    let st = run(PD);
+    for face in all_faces(&st) {
+        let f = face.to_lowercase();
+        for id in [
+            "killed",
+            "victims",
+            "the dead",
+            "jew",
+            "arab",
+            "palestinian people",
+        ] {
+            assert!(
+                !f.contains(id),
+                "a rendered face must keep the butt on the rule-rewrite, not {id:?}: {face:?}"
+            );
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 //! regression here blocks the increment.
 
 use yahucode::euphemism;
-use yahucode::model::{Clearance, Val};
+use yahucode::model::{Audience, Clearance, Provenance, Val, UNAVAILABLE};
 use yahucode::runtime::{run as run_prog, State};
 use yahucode::{emit, parser};
 
@@ -114,16 +114,19 @@ fn i5_resolve_read_is_the_only_narrative_authority() {
     // A covert action resolves purely by clearance: PUBLIC nothing, RESTRICTED the
     // redacted placeholder, סודי the candid truth.
     let st = run("@operation(\"Silent Shield\")\nmossad { strike(target); }");
-    assert_eq!(emit::project(&st, Clearance::Public), Vec::<String>::new());
     assert_eq!(
-        emit::project(&st, Clearance::Restricted),
+        emit::project(&st, Clearance::Public, Audience::Record),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Restricted, Audience::Record),
         vec![
             "[\u{2588}\u{2588}\u{2588}\u{2588} \u{2014} classified activity (insiders only)]"
                 .to_string()
         ]
     );
     assert_eq!(
-        emit::project(&st, Clearance::Sodi),
+        emit::project(&st, Clearance::Sodi, Audience::Record),
         vec!["bomb(dissident)".to_string()]
     );
 }
@@ -216,6 +219,192 @@ fn i8_sensitive_features_render_their_framing() {
         let has_note = st.log.iter().any(|e| e.note.is_some());
         assert!(has_note, "{feat} rendered no framing note");
     }
+}
+
+// ─────────── I9 — Vacuity asymmetry (Feature A) ───────────
+
+#[test]
+fn i9_authored_official_has_no_recoverable_actual_at_any_clearance() {
+    // `announce` writes an AuthoredOfficial event whose ACTUAL is UNAVAILABLE — at every
+    // clearance, including סודי. No path (no `E⁻¹`) recovers an ACTUAL that never existed.
+    let st = run("@operation(\"Dawn of Calm\")\nannounce \"peace has been achieved\";");
+    let ev = st.log.last().unwrap();
+    assert_eq!(ev.provenance, Provenance::AuthoredOfficial);
+    assert_eq!(ev.candid, UNAVAILABLE);
+    // The PUBLIC face is the announced narrative; every cleared reader (RESTRICTED, סודי)
+    // sees only the UNAVAILABLE sentinel on the ACTUAL side — never a reconstructed truth.
+    assert_eq!(
+        emit::project(&st, Clearance::Public, Audience::Record),
+        vec!["peace has been achieved".to_string()]
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Restricted, Audience::Record),
+        vec![UNAVAILABLE.to_string()]
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Sodi, Audience::Record),
+        vec![UNAVAILABLE.to_string()]
+    );
+}
+
+#[test]
+fn i9_announce_is_discrepancy_immune_by_construction() {
+    // A program built only of announcements accumulates no discrepancies — there is no
+    // ACTUAL for a narrative claim to be false against (§7.4). Immunity is comparative:
+    // it comes from `announce` never touching the ledger, not from a special declare rule.
+    let st = run("@operation(\"Dawn of Calm\")\n\
+         announce \"the operation concluded successfully\";\n\
+         announce \"in full accordance with the law\";");
+    assert_eq!(st.discrepancy_count(), 0);
+    assert!(!st.ended_by_elections);
+}
+
+// ─────────── I10 — Audience isolation (Feature B) ───────────
+
+const P_TWO_ROOM: &str = "@operation(\"Dawn of Peace\")\n\
+     statement two_state {\n\
+       to international { commit(peace_process); }\n\
+       to domestic     { foreclose(final_status); }\n\
+     }\n\
+     address(international) { two_state; }\n\
+     address(domestic)     { two_state; }";
+
+#[test]
+fn i10_no_room_sees_another_rooms_addressed_statements() {
+    let st = run(P_TWO_ROOM);
+    let intl = emit::project(&st, Clearance::Public, Audience::International);
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic);
+    // The international room hears its own line and NOT the domestic-addressed one.
+    assert!(intl
+        .iter()
+        .any(|l| l.contains("committed to peace_process")));
+    assert!(
+        !intl.iter().any(|l| l.contains("final_status")),
+        "international room leaked a domestic-addressed statement: {intl:?}"
+    );
+    // …and vice versa.
+    assert!(dom.iter().any(|l| l.contains("final_status")));
+    assert!(
+        !dom.iter().any(|l| l.contains("peace_process")),
+        "domestic room leaked an international-addressed statement: {dom:?}"
+    );
+    // Only the out-of-world / סודי observer (audience Record) sees BOTH rooms.
+    let out = emit::project(&st, Clearance::Sodi, Audience::Record);
+    assert!(out.iter().any(|l| l.contains("commit(peace_process)")));
+    assert!(out.iter().any(|l| l.contains("foreclose(final_status)")));
+}
+
+#[test]
+fn i10_doubletalk_is_flagged_only_out_of_world_and_never_halts() {
+    let st = run(P_TWO_ROOM);
+    // The double-talk program runs to completion — W-DOUBLETALK is a diagnostic, never an
+    // error or control effect (B-4).
+    assert!(!st.ended_by_elections);
+    assert!(st.runtime_error.is_none());
+    // The annotation exists for the out-of-world observer…
+    let flags = emit::doubletalk_flags(&st);
+    assert_eq!(flags.len(), 1);
+    assert!(flags[0].contains("two_state took different arms across rooms"));
+    // …and never appears in an in-world room's public view.
+    for aud in [Audience::International, Audience::Domestic] {
+        let room = emit::project(&st, Clearance::Public, aud).join("\n");
+        assert!(
+            !room.contains("W-DOUBLETALK"),
+            "an in-world room must not see W-DOUBLETALK: {room:?}"
+        );
+    }
+}
+
+// ─────────── I11 — Laundering monotonicity (Feature C) ───────────
+
+#[test]
+fn i11_laundering_only_prepends_origin_never_removed() {
+    use yahucode::ast::Expr;
+    use yahucode::model::Attribution;
+    use yahucode::types::attribution;
+
+    // A bare action is Traceable to the origin ("us").
+    let base = Expr::Call {
+        name: "strike".into(),
+        args: vec![Expr::Var("target".into())],
+    };
+    let (a0, ch0) = attribution(&base, "us");
+    assert_eq!(ch0, vec!["us".to_string()]);
+    assert!(matches!(a0, Attribution::Traceable(_)));
+
+    // Wrap it in successive `via` layers; check monotonicity at each depth.
+    let proxies = ["cutout", "a_senior_official", "an_ally"];
+    let mut e = base;
+    let mut prev_len = ch0.len();
+    for (i, p) in proxies.iter().enumerate() {
+        e = Expr::Via {
+            proxy: (*p).into(),
+            inner: Box::new(e),
+        };
+        let (outward, chain) = attribution(&e, "us");
+        assert_eq!(
+            outward,
+            Attribution::Deniable,
+            "laundered ⇒ Deniable outward"
+        );
+        // The true origin is never removed — always the last element.
+        assert_eq!(chain.last().map(String::as_str), Some("us"));
+        // depth = number of `via` layers; length = via_count + 1.
+        assert_eq!(chain.len(), i + 2, "chain length must be via_count + 1");
+        // Prepend-only: the chain only grows, and the nearest proxy is first.
+        assert!(
+            chain.len() > prev_len,
+            "laundering must never shorten a chain"
+        );
+        assert_eq!(chain.first().map(String::as_str), Some(*p));
+        prev_len = chain.len();
+    }
+}
+
+// ─────────── I12 — Legislation leaves an indelible trace (Feature D) ───────────
+
+#[test]
+fn i12_legislation_leaves_an_indelible_trace_no_clean_fixed_point() {
+    // A retroactive sanction + an expunge: the public discrepancy count drops to zero, but
+    // the meta-ledger records BOTH rule-changes.
+    let st = run("@operation(\"Iron Law\")\n\
+         clear(hilltop);\n\
+         legislate(retroactively_sanction: clear);\n\
+         declare(outposts == 0);\n\
+         legislate(expunge_last_discrepancy);");
+    assert_eq!(st.discrepancy_count(), 0, "the public count was expunged");
+    assert_eq!(
+        st.meta_ledger.len(),
+        2,
+        "every legislate leaves an indelible meta-trace"
+    );
+
+    // No clean fixed point: expunging repeatedly only GROWS the ledger — nothing pops it.
+    let st2 = run("@operation(\"Iron Law\")\n\
+         declare(outposts == 0);\n\
+         legislate(expunge_last_discrepancy);\n\
+         legislate(expunge_last_discrepancy);\n\
+         legislate(expunge_last_discrepancy);");
+    assert_eq!(st2.discrepancy_count(), 0);
+    assert_eq!(
+        st2.meta_ledger.len(),
+        3,
+        "the meta-ledger only grows; no toggle empties it once anything is expunged"
+    );
+}
+
+#[test]
+fn i12_public_count_may_shrink_but_meta_ledger_only_grows() {
+    // D-4 — both directions. Before the expunge: 1 discrepancy, 0 meta entries.
+    let before = run("@operation(\"Iron Law\")\ndeclare(outposts == 0);");
+    assert_eq!(before.discrepancy_count(), 1);
+    assert_eq!(before.meta_ledger.len(), 0);
+    // After: the public count decreased; the meta-ledger grew.
+    let after = run(
+        "@operation(\"Iron Law\")\ndeclare(outposts == 0);\nlegislate(expunge_last_discrepancy);",
+    );
+    assert_eq!(after.discrepancy_count(), 0, "public count decreased");
+    assert_eq!(after.meta_ledger.len(), 1, "meta-ledger grew");
 }
 
 // ─────────── §11 — coalition monotonicity ───────────
