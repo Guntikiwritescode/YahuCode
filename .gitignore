@@ -5,3 +5,5 @@ Cargo.lock
 __pycache__/
 # Transient agent worktrees created by the Claude Code harness — never project content.
 .claude/worktrees/
+# CI build-proof capture (produced by the "capture proof" step); never committed.
+test-output.txt

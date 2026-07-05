@@ -14,13 +14,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
+        # rust-toolchain.toml pins the exact channel (1.94.1) and its components;
+        # the first cargo/rustup call auto-installs that toolchain. This step makes
+        # the component install explicit so "green in CI" == "green on the pin".
         run: rustup component add rustfmt clippy
+      - name: No silenced tests
+        # Mechanically enforce "don't reward-hack the suite": a test parked with
+        # #[ignore] fails the build. grep exits 0 when it finds a match, so a hit
+        # takes the `then` branch and we exit 1; no match (grep exit 1) passes.
+        run: |
+          if grep -rnE '#\[ignore\]' src/ tests/; then
+            echo "::error::a test was silenced with #[ignore]"; exit 1
+          fi
       - name: Format check
         run: cargo fmt --check
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
-      - name: Test (all four suites; invariant assertions live in debug builds)
-        run: cargo test
+      - name: Test (all four suites; invariant assertions live in debug builds) + capture proof
+        # Runs the suite AND tees a self-contained proof (toolchain version + full
+        # test output) for the build-proof artifact below. `pipefail` keeps this a
+        # real gate: a failing test still fails the step (tee cannot mask it).
+        run: |
+          { cargo --version && cargo test; } |& tee test-output.txt
+      - name: Upload build proof
+        # Attach the captured proof to the run so an auditor can read the toolchain
+        # version + test result without re-running anything. `always()` so the proof
+        # is captured even when the test step fails — that is when it matters most.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-proof
+          path: test-output.txt
       - name: Build (release, warning-free)
         run: cargo build --release
         env:
