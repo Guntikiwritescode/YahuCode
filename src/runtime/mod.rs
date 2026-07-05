@@ -107,6 +107,9 @@ pub struct State {
     pub turn: u64,
     /// Evaluation-step counter (drives the non-termination safety valve).
     pub steps: u64,
+    /// Re-entrant call/invoke depth (functions + poly-statements). Bounds recursive
+    /// non-termination before it overflows the native stack (§12).
+    pub depth: u64,
     /// Named runtime parameters (no magic constants — §12).
     pub config: RuntimeConfig,
 }
@@ -133,6 +136,7 @@ impl State {
             op_name,
             turn: 0,
             steps: 0,
+            depth: 0,
             config,
         }
     }
@@ -211,6 +215,26 @@ impl State {
             )));
         }
         Ok(())
+    }
+
+    /// Enter a re-entrant call/invoke: charge one unit of depth and reject if it exceeds
+    /// the bound (unbounded recursion would otherwise overflow the native stack — a hard
+    /// abort — before the step budget bites). Paired with `leave_call` on every exit.
+    fn enter_call(&mut self) -> Result<(), EvalError> {
+        self.depth += 1;
+        if self.depth > self.config.max_depth {
+            self.depth -= 1; // do not count the rejected frame
+            return Err(EvalError(format!(
+                "call depth exceeded ({}); possible non-termination",
+                self.config.max_depth
+            )));
+        }
+        Ok(())
+    }
+
+    /// Leave a re-entrant call/invoke (mirrors `enter_call`).
+    fn leave_call(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 }
 
@@ -796,8 +820,13 @@ fn invoke(name: &str, st: &mut State) -> ExecResult {
     };
     match arms.iter().position(|(aud, _)| *aud == st.audience) {
         Some(idx) => {
+            // A poly-statement may invoke itself; bound the depth like a function call so
+            // recursive invocation can't overflow the native stack.
+            st.enter_call()?;
             st.doubletalk_log.push((name.to_string(), idx));
-            exec_block(&arms[idx].1, st)
+            let flow = exec_block(&arms[idx].1, st);
+            st.leave_call();
+            flow
         }
         // No arm for this room: the government simply said nothing to them. Not an error.
         None => Ok(Flow::Next),
@@ -1014,7 +1043,20 @@ fn laundered_core_render(e: &Expr, st: &mut State) -> Result<String, EvalError> 
             )),
             _ => Ok(pretty(e)),
         },
-        other => Ok(eval(other, st)?.render()),
+        // Everything else (including a non-sanctioned Call) is evaluated for effect and
+        // its value rendered. Listed exhaustively — no catch-all — so a new `Expr` variant
+        // forces a decision here (§13, pitfall 2).
+        Expr::Int(_)
+        | Expr::Bool(_)
+        | Expr::Str(_)
+        | Expr::Var(_)
+        | Expr::UnOp { .. }
+        | Expr::BinOp { .. }
+        | Expr::Call { .. }
+        | Expr::Read(_)
+        | Expr::Cast { .. }
+        | Expr::SelfDefense(_)
+        | Expr::External(_) => Ok(eval(e, st)?.render()),
     }
 }
 
@@ -1125,12 +1167,14 @@ fn call_function(name: &str, argv: Vec<Val>, st: &mut State) -> EvalResult {
             argv.len()
         )));
     }
+    st.enter_call()?;
     st.env.push_frame();
     for (p, v) in params.iter().zip(argv) {
         st.env.define_local(p, v);
     }
     let flow = exec_block(&body, st);
     st.env.pop_frame();
+    st.leave_call();
     match flow? {
         Flow::Return(v) => Ok(v),
         Flow::Next => Ok(Val::Unit),

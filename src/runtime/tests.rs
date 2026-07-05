@@ -299,6 +299,39 @@ fn step_budget_stops_an_empty_bodied_loop() {
 }
 
 #[test]
+fn call_depth_guard_stops_infinite_function_recursion() {
+    // Companion to the step budget: unbounded RECURSION must abort loudly (a controlled
+    // EvalError), never overflow the native stack. The step budget alone does not catch
+    // this — native frames exhaust the OS stack long before the step count is reached.
+    let cfg = RuntimeConfig {
+        max_depth: 64,
+        ..RuntimeConfig::default()
+    };
+    let st = run_with_config(
+        &parse("@operation(\"X\")\nfunc f() { f(); }\nf();").unwrap(),
+        cfg,
+    );
+    assert!(st.runtime_error.as_deref().unwrap().contains("call depth"));
+    assert!(!st.ended_by_elections); // an eval error is NOT the in-world halt (I6)
+}
+
+#[test]
+fn call_depth_guard_stops_infinite_poly_recursion() {
+    // Feature B — a self-invoking poly-statement is bounded by the same guard.
+    let cfg = RuntimeConfig {
+        max_depth: 64,
+        ..RuntimeConfig::default()
+    };
+    let st = run_with_config(
+        &parse("@operation(\"X\")\nstatement s { to domestic { s; } }\naddress(domestic) { s; }")
+            .unwrap(),
+        cfg,
+    );
+    assert!(st.runtime_error.as_deref().unwrap().contains("call depth"));
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
 fn bribe_saturates_instead_of_overflowing() {
     // Regression: a huge bribe must not panic (debug) / wrap (release) the ledger.
     let st = run_src("@operation(\"Guardian of the Walls\")\nbribe(x, 9223372036854775807);");

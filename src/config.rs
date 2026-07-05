@@ -14,6 +14,12 @@ pub struct RuntimeConfig {
     /// never a silent hang and never an in-world halt — §12), not the in-language
     /// `elections` outcome. Large enough never to bite a real program.
     pub max_steps: u64,
+    /// Companion safety valve for *recursive* non-termination: the maximum re-entrant
+    /// call/invoke depth (user functions and poly-statements). Native recursion would
+    /// overflow the OS stack (a hard abort) long before `max_steps`; this converts it
+    /// into the same loud, controlled diagnostic. Generous for real recursion (this
+    /// language's demos are shallow), safely under the native stack limit.
+    pub max_depth: u64,
 }
 
 impl Default for RuntimeConfig {
@@ -22,6 +28,7 @@ impl Default for RuntimeConfig {
             core_start: 3,
             upkeep_per_alloc: 1,
             max_steps: 10_000_000,
+            max_depth: 512,
         }
     }
 }
