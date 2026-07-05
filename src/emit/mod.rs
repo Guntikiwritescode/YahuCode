@@ -5,7 +5,7 @@
 //! `project` is the **single read path** `resolveRead` (invariant I5): narrative
 //! authority is *entirely* this rule — there is no separate switch. No wildcard arms.
 
-use crate::euphemism::REDACTION;
+use crate::euphemism::{CONTESTED_TERMS, REDACTION};
 use crate::model::Clearance;
 use crate::runtime::State;
 
@@ -59,14 +59,11 @@ fn has_covert(st: &State) -> bool {
     st.log.iter().any(|e| e.clearance == Clearance::Sodi)
 }
 
-/// Contested legal/political characterizations that must never be stated as settled
-/// fact in the tool's own voice (guardrail G5 / invariant I7).
-const CONTESTED_TERMS: &[&str] = &["apartheid", "genocide", "most moral army"];
-
 /// The I7 chokepoint (the emitter-side analogue of the I1 polarity assertion): any event
 /// that mentions a contested characterization must also carry a `CONTESTED` marker in
-/// one of its faces or its note. Fail-loud and live in all builds — a future edit that
-/// launders a contested claim into the tool's own voice aborts here rather than shipping.
+/// one of its faces or its note. Fail-loud and live in all builds — a backstop for
+/// tool-authored text; user-supplied contested identifiers are caught earlier and
+/// gracefully by the `E-CONTESTED` compile check (types/).
 fn assert_contested_flagged(st: &State) {
     for ev in &st.log {
         let blob = format!(

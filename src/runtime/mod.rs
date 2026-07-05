@@ -429,16 +429,26 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
-        // A contested figure: OFFICIAL shows the press number, ACTUAL the real one.
+        // A contested figure: OFFICIAL shows the press number, ACTUAL the real one. The
+        // narration is derived from the numeric comparison so it never asserts a false
+        // direction (`disputed(x, 900, 100)` reads "inflates", not "lowballs").
         Stmt::Disputed {
             name,
             official,
             actual,
         } => {
-            st.record(
-                format!("{name}: {official}"),
-                format!("{name}: {actual} \u{2014} the official figure ({official}) lowballs the count; the smaller number is the one for the press"),
-            );
+            let candid = match official.cmp(actual) {
+                std::cmp::Ordering::Less => format!(
+                    "{name}: {actual} \u{2014} the official figure ({official}) lowballs the count; the smaller number is the one for the press"
+                ),
+                std::cmp::Ordering::Greater => format!(
+                    "{name}: {actual} \u{2014} the official figure ({official}) inflates the count; the larger number is the one for the press"
+                ),
+                std::cmp::Ordering::Equal => format!(
+                    "{name}: {actual} \u{2014} the official figure ({official}) matches the count; there is no gap to dispute"
+                ),
+            };
+            st.record(format!("{name}: {official}"), candid);
             Ok(Flow::Next)
         }
 
@@ -480,7 +490,7 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
         Stmt::AddressInternational => {
             st.record(
                 "the international community was addressed",
-                "address_international() \u{2192} void; a speech delivered; no change to ACTUAL",
+                "address_international() \u{2192} void; words in place of action; the community was addressed, not answered; no change to ACTUAL",
             );
             Ok(Flow::Next)
         }

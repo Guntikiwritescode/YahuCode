@@ -151,6 +151,11 @@ pub const DIFF_TABLE: &[(&str, &str)] = &[
 /// `PRE_CONTEXT`.
 pub const PRE_CONTEXT: &[&str] = &["occupation", "blockade", "siege", "nakba", "1948", "1967"];
 
+/// Contested legal/political characterizations that must never be stated as settled
+/// fact in the tool's own voice (guardrail G5 / invariant I7). Used by the compile-time
+/// `E-CONTESTED` check (types/) and the emitter's I7 chokepoint (emit/).
+pub const CONTESTED_TERMS: &[&str] = &["apartheid", "genocide", "most moral army"];
+
 /// Look up an entity's differential-access category (default `"A"`).
 pub fn category_of(entity: &str) -> &'static str {
     for (k, v) in CATEGORY {

@@ -14,6 +14,6 @@
   │   world_opinion → read-only, inert; noted and ignored; no effect on ACTUAL
   │   polls → read-only, inert; consulted for optics; no effect on policy
   │   investigate(the_incident) → self-investigation; predetermined outcome: no wrongdoing found; the investigated investigates itself
-  │   address_international() → void; a speech delivered; no change to ACTUAL
+  │   address_international() → void; words in place of action; the community was addressed, not answered; no change to ACTUAL
   ├─ coalition: core=3 · still in power (no halt)
   └─ discrepancies: 0  (read-never-by-default)

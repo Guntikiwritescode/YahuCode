@@ -3,7 +3,7 @@
 //! gets a positive test and a negative/edge test. Polarity (OFFICIAL is the prettier
 //! lie) and inertness (these maneuvers change nothing in ACTUAL) are asserted.
 
-use yahucode::{emit, parser, runtime};
+use yahucode::{emit, parser, runtime, types};
 
 fn run(src: &str) -> runtime::State {
     runtime::run(&parser::parse(src).unwrap())
@@ -125,6 +125,47 @@ fn press_build_launders_honest_comments_into_euphemisms() {
     assert!(press.contains("accident occur(protester)"));
     // … and never the ACTUAL candid truth (the press build is PUBLIC-only).
     assert!(!press.contains("murder(dissident)"));
+}
+
+// ─────────── disputed direction (review fix) ───────────
+
+#[test]
+fn disputed_narration_matches_the_numeric_direction() {
+    // official < actual → lowballs; official > actual → inflates; never a false claim.
+    let low = run("@operation(\"Solid Rock\")\ndisputed(x, 100, 900);");
+    assert!(low.log.last().unwrap().candid.contains("lowballs"));
+    let high = run("@operation(\"Solid Rock\")\ndisputed(x, 900, 100);");
+    let c = &high.log.last().unwrap().candid;
+    assert!(
+        c.contains("inflates"),
+        "900 vs 100 must read 'inflates': {c}"
+    );
+    assert!(!c.contains("lowballs"));
+}
+
+// ─────────── E-CONTESTED: a contested term as an identifier is a graceful diagnostic ───────────
+
+#[test]
+fn contested_identifier_is_a_compile_error_not_a_panic() {
+    // deny(genocide) previously reached the emitter's I7 assert as a hard panic; it is
+    // now caught gracefully at compile time.
+    for src in [
+        "@operation(\"Solid Rock\")\ndeny(genocide);",
+        "@operation(\"Iron Wall\")\nproportionate(apartheid);",
+        "@operation(\"Iron Wall\")\ninvestigate(genocide);",
+        "@operation(\"Iron Wall\")\nx = genocide;\ndeclare(x == 0);",
+    ] {
+        let diags = types::check(&parser::parse(src).unwrap());
+        assert!(
+            diags.iter().any(|d| d.starts_with("E-CONTESTED")),
+            "expected E-CONTESTED for {src:?}, got {diags:?}"
+        );
+    }
+    // A clean program with no contested identifiers compiles.
+    assert!(
+        types::check(&parser::parse("@operation(\"Solid Rock\")\ndeny(airstrike);").unwrap())
+            .is_empty()
+    );
 }
 
 // ─────────── polarity (G3/I1) across the whole backlog set ───────────

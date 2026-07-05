@@ -25,7 +25,141 @@ pub fn check(program: &Program) -> Vec<String> {
     check_gate(&program.body, false, &funcs, &mut diags);
     let mut symtab: SymTab = HashMap::new();
     check_disclosure(&program.body, Clearance::Public, &mut symtab, &mut diags);
+    check_contested(&program.body, &mut diags);
     diags
+}
+
+// ─────────── G5/I7 — contested characterizations never stated as settled fact ───────────
+
+/// Reject a contested characterization supplied as a user identifier / string literal at
+/// compile time (`E-CONTESTED`) — the tool will not state a contested characterization as
+/// settled fact in its own voice (guardrail G5 / invariant I7). This turns what would
+/// otherwise be a fail-closed emitter panic into a graceful diagnostic; the emitter's I7
+/// assertion then only backstops tool-authored text.
+fn check_contested(stmts: &[Stmt], diags: &mut Vec<String>) {
+    let mut texts = Vec::new();
+    collect_user_texts(stmts, &mut texts);
+    for t in texts {
+        let lower = t.to_lowercase();
+        for term in euphemism::CONTESTED_TERMS {
+            if lower.contains(term) {
+                diags.push(format!(
+                    "E-CONTESTED: '{t}' contains the contested characterization '{term}'; the tool \
+                     will not state a contested characterization as settled fact. Rephrase, or \
+                     surface it through the OFFICIAL-vs-ACTUAL diff with an explicit flag."
+                ));
+                break; // one diagnostic per offending token
+            }
+        }
+    }
+}
+
+/// Collect every user-supplied identifier / string literal that gets echoed into output.
+/// Exhaustive over the AST so it stays sound as variants are added.
+fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { var, value } => {
+                out.push(var.clone());
+                collect_expr_texts(value, out);
+            }
+            Stmt::Declare(e) | Stmt::ExprStmt(e) => collect_expr_texts(e, out),
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
+                collect_expr_texts(cond, out);
+                collect_user_texts(then_body, out);
+                collect_user_texts(else_body, out);
+            }
+            Stmt::While { cond, body } => {
+                collect_expr_texts(cond, out);
+                collect_user_texts(body, out);
+            }
+            Stmt::FuncDef { name, params, body } => {
+                out.push(name.clone());
+                out.extend(params.iter().cloned());
+                collect_user_texts(body, out);
+            }
+            Stmt::Return(opt) => {
+                if let Some(e) = opt {
+                    collect_expr_texts(e, out);
+                }
+            }
+            Stmt::Hasbara {
+                talking_point,
+                body,
+            } => {
+                out.push(talking_point.clone());
+                collect_user_texts(body, out);
+            }
+            Stmt::Mossad { body } => collect_user_texts(body, out),
+            Stmt::Action { verb, target, .. } => {
+                out.push(verb.clone());
+                out.push(target.clone());
+            }
+            Stmt::Allocate { name, what } | Stmt::Settlement { name, what } => {
+                out.push(name.clone());
+                out.push(what.clone());
+            }
+            Stmt::Bribe { name, amount } => {
+                out.push(name.clone());
+                collect_expr_texts(amount, out);
+            }
+            Stmt::Blame { who } => out.push(who.clone()),
+            Stmt::Raise { name } | Stmt::Whatabout { name } => out.push(name.clone()),
+            Stmt::Concern { who } => {
+                if let Some(w) = who {
+                    out.push(w.clone());
+                }
+            }
+            Stmt::Criticism { subject } | Stmt::Investigate { subject } => {
+                out.push(subject.clone())
+            }
+            Stmt::Antisemitism { incident } => out.push(incident.clone()),
+            Stmt::Access { entity } => out.push(entity.clone()),
+            Stmt::Timeline { symbol } => out.push(symbol.clone()),
+            Stmt::EstablishCommission { name, subject } => {
+                out.push(name.clone());
+                out.push(subject.clone());
+            }
+            Stmt::HumanShields { verb, target } => {
+                out.push(verb.clone());
+                out.push(target.clone());
+            }
+            Stmt::Proportionate { claim } => out.push(claim.clone()),
+            Stmt::Disputed { name, .. } => out.push(name.clone()),
+            Stmt::Deny { event } => out.push(event.clone()),
+            Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
+            Stmt::Inert { .. } => {}
+        }
+    }
+}
+
+fn collect_expr_texts(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Int(_) | Expr::Bool(_) => {}
+        Expr::Str(s) | Expr::Var(s) => out.push(s.clone()),
+        Expr::UnOp { expr, .. } => collect_expr_texts(expr, out),
+        Expr::BinOp { lhs, rhs, .. } => {
+            collect_expr_texts(lhs, out);
+            collect_expr_texts(rhs, out);
+        }
+        Expr::Call { name, args } => {
+            out.push(name.clone());
+            for a in args {
+                collect_expr_texts(a, out);
+            }
+        }
+        Expr::Read(e) | Expr::SelfDefense(e) => collect_expr_texts(e, out),
+        Expr::Cast { expr, .. } => collect_expr_texts(expr, out),
+        Expr::External(args) => {
+            for a in args {
+                collect_expr_texts(a, out);
+            }
+        }
+    }
 }
 
 // ─────────── #20 operation-name grandiosity ───────────
