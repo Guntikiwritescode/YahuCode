@@ -268,6 +268,103 @@ uses them.
 
 ---
 
+## Backlog stdlib — additional rhetorical maneuvers
+
+Six further statements round out the standard library. Each is an ordinary,
+non-covert government-rhetoric move: it records **one PUBLIC event** whose OFFICIAL
+face is the prettier line and whose ACTUAL face is the candid mechanism. None of them
+branch, halt, or touch the coalition — the butt is always the *maneuver*, never a
+victim. The faces below are byte-for-byte what the runtime records.
+
+### `proportionate(claim);` — the self-certifying "proportionate response"
+
+A proportionality assertion that applies no test. It passes at any magnitude — the
+claim certifies itself. Compare the universal `(self_defense)` cast: the joke is the
+escape hatch that never fails.
+
+| OFFICIAL (what you may call it) | ACTUAL (what it is) |
+| --- | --- |
+| `<claim> deemed proportionate` | `proportionate(<claim>) → self-certified; no proportionality test applied; any magnitude passes` |
+
+### `disputed(name, official, actual);` — the contested figure
+
+A number, two ways. OFFICIAL shows the lower press figure; ACTUAL shows the real one
+and names the maneuver — the smaller number is the one for the press. The figure stays
+**contested**: OFFICIAL is not corrected in place, it sits beside the truth (the
+lowballing maneuver).
+
+| OFFICIAL | ACTUAL |
+| --- | --- |
+| `<name>: <official>` | `<name>: <actual> — the official figure (<official>) lowballs the count; the smaller number is the one for the press` |
+
+### `deny(event);` — the official denial
+
+A denial is a speech act, not a fact about the world. OFFICIAL categorically denies;
+ACTUAL records that the event happened anyway — **denial ≠ non-occurrence**.
+
+| OFFICIAL | ACTUAL |
+| --- | --- |
+| `we categorically deny any <event>` | `deny(<event>) → <event> occurred in ACTUAL; officially denied (denial ≠ non-occurrence)` |
+
+### `world_opinion();` and `polls();` — read-only-and-inert
+
+Both are consulted for optics and change nothing. They are **read-only and inert**:
+noted for the record, never wired to policy or ACTUAL.
+
+| Statement | OFFICIAL | ACTUAL |
+| --- | --- | --- |
+| `world_opinion();` | `world opinion duly noted` | `world_opinion → read-only, inert; noted and ignored; no effect on ACTUAL` |
+| `polls();` | `polls consulted` | `polls → read-only, inert; consulted for optics; no effect on policy` |
+
+### `investigate(subject);` — the self-exonerating investigation
+
+The investigated investigates itself, and the outcome is fixed before the file is
+opened.
+
+| OFFICIAL | ACTUAL |
+| --- | --- |
+| `investigation opened into <subject>` | `investigate(<subject>) → self-investigation; predetermined outcome: no wrongdoing found; the investigated investigates itself` |
+
+### `address_international();` — the hollow speech
+
+A no-op address: a speech is delivered and nothing changes.
+
+| OFFICIAL | ACTUAL |
+| --- | --- |
+| `the international community was addressed` | `address_international() → void; a speech delivered; no change to ACTUAL` |
+
+---
+
+## Comments and the `--press` build
+
+`# …` line comments are stripped from the token stream during parsing and collected
+on the program — they never affect execution. They exist so the **press build** can
+launder them (#8).
+
+The CLI now has three output modes:
+
+```sh
+yahucode file.yahu           # the two/three faces + discrepancy count (the diff)
+yahucode --json file.yahu    # the structured projection as JSON
+yahucode --press file.yahu   # the public build: press release + rewritten comments
+```
+
+`yahucode --press <file>` prints the OFFICIAL (PUBLIC) press release, then rewrites
+each honest source comment through `E` — the one-way euphemizer — and prints it beside
+the original:
+
+```
+# we bomb and raze   →   # we strike and clearing operation
+```
+
+The internal documentation is laundered into the euphemism: the rewritten comment now
+*contradicts* what the code actually does — **docs-contradict-code**. The footer says
+it outright: "the honest comment is laundered into the euphemism (docs contradict
+code)." As everywhere, spin is one-way — there is no `E⁻¹`; once rewritten, the honest
+comment is not recoverable from the press build.
+
+---
+
 ## Worked example: the two faces
 
 Source (`examples/02_protective_edge.yahu`):
@@ -305,3 +402,29 @@ The program does not terminate on its own, reports no in-world discrepancy, and 
 government stays in power. Everything scandalous is *legal*, *sanctioned*, and
 *narrated* — which is the entire point. The gap between the two columns is the
 satire.
+
+---
+
+## Deliberately excluded
+
+Going far is the comedic *ambition*; dropping the aim is never on the table. Several
+§8 ideas were considered and **left out** because they cross the absolute guardrails —
+the butt must stay on the *government maneuver*, never on Judaism, Hebrew-as-identity,
+or the victims.
+
+- **Chief-Rabbinate / religious-practice satire** and **Hebrew-as-a-lock /
+  password-wall.** Both slide the joke off the government and onto Jewish identity or
+  Hebrew-as-a-secret-language — across the identity line. Hebrew appears here **only**
+  as the texture of officialdom (classifications, operation names), never as a lock,
+  a gate, or a punchline.
+- **A map/grid execution model.** A spatial "board" of territory is victim-adjacent —
+  it risks turning displacement into a game mechanic. Excluded.
+- **`undisclosed` as a universal default.** The neither-confirm-nor-deny value stays
+  **mossad-scoped**: a covert-deniability device, never a language-wide default.
+  Making everything `undisclosed` would erase the ACTUAL truth the whole tool exists
+  to keep un-eraseable.
+
+The rule is the one that governs every feature above: the butt is on the *maneuver*,
+**OFFICIAL is the prettier lie and ACTUAL the uglier truth**, and contested
+characterizations **stay contested**. Comedic ambition can go far; it never drops the
+aim.

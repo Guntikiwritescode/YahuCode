@@ -28,14 +28,17 @@ are each replaced by a thematic mechanism that is load-bearing:
 ## Build, run, test
 
 ```sh
-cargo build            # build the interpreter
-cargo run -- <file>    # run a .yahu program (CLI lands in PR2)
-cargo test             # golden + invariant + per-feature + framing suites
+cargo build                    # build the interpreter
+cargo run -- <file.yahu>       # run a program; print the OFFICIAL vs ACTUAL diff
+cargo run -- --json <file>     # structured projection {official, actual, discrepancies}
+cargo run -- --press <file>    # the public build: press release + rewritten comments
+cargo test                     # golden + invariant + feature + framing + backlog suites
 cargo clippy --all-targets -- -D warnings   # lint (warning-free)
-cargo fmt --check      # formatting
+cargo fmt --check              # formatting
 ```
 
-Requires a stable Rust toolchain (developed against 1.94).
+Requires a stable Rust toolchain (developed against 1.94). See
+[`LANGUAGE.md`](LANGUAGE.md) for the full language reference.
 
 ## Host language
 
