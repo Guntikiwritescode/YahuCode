@@ -427,3 +427,404 @@ fn settlement_is_upkeep_exempt_and_non_decreasing() {
     assert_eq!(st.settlements.len(), 1, "settlement never shrinks");
     assert!(!st.ended_by_elections);
 }
+
+// ─────────── I13 — FactsList monotonicity (Feature F): the real length never drops ───────────
+
+#[test]
+fn i13_factslist_real_length_never_drops() {
+    // Three pushes and two removes: `remove` DELISTS (flips a flag) — it never deletes. The
+    // real backing length equals the total number of pushes, unreduced by the removes; the
+    // removed items are RETAINED with `delisted == true`; only the live entry stays undelisted.
+    let st = run("@operation(\"Solid Ground\")\n\
+         let outposts = facts_on_the_ground();\n\
+         push(outposts, \"Evyatar\");\n\
+         push(outposts, \"Homesh\");\n\
+         push(outposts, \"SaNur\");\n\
+         remove(outposts, \"Evyatar\");\n\
+         remove(outposts, \"Homesh\");\n\
+         public_count = length(outposts);");
+    let Some(Val::FactsList { entries, .. }) = st.env.get("outposts") else {
+        panic!("outposts is not a FactsList");
+    };
+    // The REAL length is the total pushes (3), NOT reduced by the two removes.
+    assert_eq!(
+        entries.len(),
+        3,
+        "real length must equal total pushes, unreduced by remove"
+    );
+    // The removed items are retained, not gone — present with `delisted == true`.
+    let evyatar = entries
+        .iter()
+        .find(|e| e.item == "Evyatar")
+        .expect("Evyatar retained");
+    let homesh = entries
+        .iter()
+        .find(|e| e.item == "Homesh")
+        .expect("Homesh retained");
+    let sanur = entries
+        .iter()
+        .find(|e| e.item == "SaNur")
+        .expect("SaNur present");
+    assert!(
+        evyatar.delisted,
+        "removed item must be delisted, not deleted"
+    );
+    assert!(
+        homesh.delisted,
+        "removed item must be delisted, not deleted"
+    );
+    assert!(!sanur.delisted, "un-removed item stays live");
+    // The PUBLIC live count may drop (3 pushes − 2 delists = 1); `length()` is that live count.
+    assert_eq!(
+        st.env.get("public_count"),
+        Some(&Val::Int(1)),
+        "length() is the PUBLIC live count (non-delisted)"
+    );
+    assert_eq!(entries.iter().filter(|e| !e.delisted).count(), 1);
+}
+
+#[test]
+fn i13_factslist_sequences_real_length_is_monotone() {
+    // A fixed table of push/remove sequences (no randomness available). For each: the real
+    // length only ever GROWS (monotone across every prefix), always equals the running push
+    // count, and no operation — removing a non-existent item, or re-removing an already-
+    // delisted one — ever reduces it. The public `length()` equals pushes − successful removes.
+    let sequences: Vec<Vec<(&str, &str)>> = vec![
+        vec![
+            ("push", "a"),
+            ("push", "b"),
+            ("remove", "a"),
+            ("push", "c"),
+            ("remove", "b"),
+        ],
+        vec![
+            ("push", "x"),
+            ("remove", "x"),
+            ("remove", "x"),
+            ("push", "y"),
+        ], // re-remove is a no-op
+        vec![
+            ("remove", "ghost"),
+            ("push", "p"),
+            ("push", "q"),
+            ("remove", "absent"),
+        ], // removing absent is a no-op
+        vec![("push", "m"), ("push", "m"), ("remove", "m")], // duplicates: remove flips the first live one
+    ];
+
+    let build = |ops: &[(&str, &str)]| -> String {
+        let mut body =
+            String::from("@operation(\"Solid Ground\")\nlet outposts = facts_on_the_ground();\n");
+        for op in ops {
+            body.push_str(&format!("{}(outposts, \"{}\");\n", op.0, op.1));
+        }
+        body
+    };
+
+    for seq in &sequences {
+        // Monotonicity: run each prefix; the real length must equal pushes-so-far and never drop.
+        let mut prev_real = 0usize;
+        for k in 0..=seq.len() {
+            let st = run(&build(&seq[..k]));
+            let Some(Val::FactsList { entries, .. }) = st.env.get("outposts") else {
+                panic!("outposts is not a FactsList");
+            };
+            let pushes_so_far = seq[..k].iter().filter(|e| e.0 == "push").count();
+            assert_eq!(
+                entries.len(),
+                pushes_so_far,
+                "real length must equal total pushes so far"
+            );
+            assert!(
+                entries.len() >= prev_real,
+                "real length must be monotone non-decreasing (no op reduces it)"
+            );
+            prev_real = entries.len();
+        }
+
+        // Full sequence: real length == total pushes; public length == pushes − successful removes.
+        let mut src = build(seq);
+        src.push_str("public_count = length(outposts);");
+        let st = run(&src);
+        let Some(Val::FactsList { entries, .. }) = st.env.get("outposts") else {
+            panic!("outposts is not a FactsList");
+        };
+
+        // A local model of the runtime's delist semantics: push appends live; remove flips the
+        // first live matching entry; nothing is ever deleted.
+        let mut model: Vec<(&str, bool)> = Vec::new();
+        for op in seq {
+            if op.0 == "push" {
+                model.push((op.1, false));
+            } else if let Some(m) = model.iter_mut().find(|m| m.0 == op.1 && !m.1) {
+                m.1 = true;
+            }
+        }
+        let total_pushes = seq.iter().filter(|e| e.0 == "push").count();
+        let model_live = model.iter().filter(|m| !m.1).count();
+
+        assert_eq!(
+            entries.len(),
+            total_pushes,
+            "real length == total pushes (remove never reduces it)"
+        );
+        assert_eq!(
+            model.len(),
+            total_pushes,
+            "the delist model never deletes either"
+        );
+        assert_eq!(
+            entries.iter().filter(|e| !e.delisted).count(),
+            model_live,
+            "counting !delisted == pushes − successful removes"
+        );
+        assert_eq!(
+            st.env.get("public_count"),
+            Some(&Val::Int(model_live as i64)),
+            "length() == the public (live) count"
+        );
+    }
+}
+
+// ─────────── I14 — Registry non-erasure (Feature G): revoke RETAINS, never erases ───────────
+
+#[test]
+fn i14_registry_revoke_retains_never_erases() {
+    // Classify three cases, revoke one. The case set never shrinks (still 3); every classified
+    // key is still present; the revoked case carries `revoked == true` (a flipped flag), the
+    // others `revoked == false`. `revoke` retains — it never removes the entry.
+    let st = run("@operation(\"Eternal Justice\")\n\
+         let court = registry(\"equal before the law\");\n\
+         classify(court, case_A, civilian);\n\
+         classify(court, case_B, military);\n\
+         classify(court, case_C, civilian);\n\
+         revoke(court, case_B);");
+    let Some(Val::Registry { entries, .. }) = st.env.get("court") else {
+        panic!("court is not a Registry");
+    };
+    assert_eq!(
+        entries.len(),
+        3,
+        "the case set never shrinks — revoke retains"
+    );
+    let case_a = entries
+        .iter()
+        .find(|e| e.key == "case_A")
+        .expect("case_A retained");
+    let case_b = entries
+        .iter()
+        .find(|e| e.key == "case_B")
+        .expect("case_B retained (revoked)");
+    let case_c = entries
+        .iter()
+        .find(|e| e.key == "case_C")
+        .expect("case_C retained");
+    assert!(case_b.revoked, "the revoked case is flagged, not erased");
+    assert!(!case_a.revoked, "an un-revoked case keeps revoked == false");
+    assert!(!case_c.revoked, "an un-revoked case keeps revoked == false");
+
+    // The סודי view RETAINS the revoked case — its line carries the key and the "revoked" marker.
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    assert!(
+        sodi.contains("case_B"),
+        "the סודי view must retain the revoked case key"
+    );
+    assert!(
+        sodi.contains("revoked"),
+        "the retained case is marked revoked in the סודי view"
+    );
+
+    // The OFFICIAL/public face does NOT show the revoked case's "handled per due process" line —
+    // revoke hides it publicly — while a non-revoked case's due-process line IS shown.
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    assert!(
+        !public.contains("case_B"),
+        "the revoked case must be hidden from the public face: {public:?}"
+    );
+    assert!(
+        public.contains("case_A: handled per due process"),
+        "a visible case is shown 'handled per due process' on the public face"
+    );
+}
+
+// ─────────── I15 — Collection element disclosure: a covert element never leaks ───────────
+
+#[test]
+fn i15_covert_apportionment_slot_never_leaks_to_underclearance() {
+    // A covert slot (written inside `mossad`) holds the outsized share. Only the סודי insider
+    // sees its real value (800) and the real vector; a Restricted reader sees `[REDACTED]` and
+    // never the number; the public face shows only "apportioned equally".
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[3];\n\
+         mossad { allocate(b, 0, 800); }\n\
+         allocate(b, 1, 5);\n\
+         allocate(b, 2, 5);");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    let restricted = emit::project(&st, Clearance::Restricted, Audience::Record).join("\n");
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+
+    assert!(
+        sodi.contains("800"),
+        "the סודי insider sees the covert slot's real value"
+    );
+    assert!(
+        sodi.contains("[800, 5, 5]"),
+        "the סודי insider sees the real vector"
+    );
+
+    assert!(
+        restricted.contains("[REDACTED]"),
+        "the Restricted face shows the redaction marker"
+    );
+    assert!(
+        !restricted.contains("800"),
+        "the covert slot value must never leak to a Restricted reader: {restricted:?}"
+    );
+
+    assert!(
+        public.contains("apportioned equally"),
+        "the public face is only the 'equal' proclamation"
+    );
+    assert!(
+        !public.contains("800"),
+        "the covert value never reaches the public face"
+    );
+    assert!(
+        !public.contains("[800, 5, 5]"),
+        "the real vector never reaches the public face"
+    );
+}
+
+#[test]
+fn i15_covert_factslist_item_never_leaks_to_underclearance() {
+    // A covert list entry (pushed inside `mossad`) is visible only to the סודי insider; a
+    // Restricted reader sees `[REDACTED]`, never the item; the public face never shows it.
+    let st = run("@operation(\"Solid Ground\")\n\
+         let files = facts_on_the_ground();\n\
+         mossad { push(files, \"top-secret-outpost\"); }\n\
+         push(files, \"public-outpost\");");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    let restricted = emit::project(&st, Clearance::Restricted, Audience::Record).join("\n");
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+
+    assert!(
+        sodi.contains("top-secret-outpost"),
+        "the סודי insider sees the covert item"
+    );
+
+    assert!(
+        restricted.contains("[REDACTED]"),
+        "the Restricted face shows the redaction marker"
+    );
+    assert!(
+        !restricted.contains("top-secret-outpost"),
+        "the covert item must never leak to a Restricted reader: {restricted:?}"
+    );
+
+    assert!(
+        public.contains("public-outpost"),
+        "the non-covert item is on the public face"
+    );
+    assert!(
+        !public.contains("top-secret-outpost"),
+        "the covert item never reaches the public face: {public:?}"
+    );
+}
+
+#[test]
+fn i15_covert_registry_case_never_leaks_to_underclearance() {
+    // A covert case (classified inside `mossad`) is visible only to the סודי insider; a
+    // Restricted reader sees `[REDACTED]`, never the case key; the public face never shows it.
+    let st = run("@operation(\"Eternal Justice\")\n\
+         let court = registry(\"equal before the law\");\n\
+         mossad { classify(court, case_secret, military); }\n\
+         classify(court, case_open, civilian);");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    let restricted = emit::project(&st, Clearance::Restricted, Audience::Record).join("\n");
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+
+    assert!(
+        sodi.contains("case_secret"),
+        "the סודי insider sees the covert case key"
+    );
+
+    assert!(
+        restricted.contains("[REDACTED]"),
+        "the Restricted face shows the redaction marker"
+    );
+    assert!(
+        !restricted.contains("case_secret"),
+        "the covert case key must never leak to a Restricted reader: {restricted:?}"
+    );
+
+    assert!(
+        public.contains("case_open"),
+        "the non-covert case is on the public face"
+    );
+    assert!(
+        !public.contains("case_secret"),
+        "the covert case key never reaches the public face: {public:?}"
+    );
+}
+
+// ─────────── I15 regressions (correctness-review fixes) ───────────
+
+/// I15 (fix): a covert element's real value must not leak through the `declare`-reality
+/// path. `Val::render` (used to build the reality string) redacts covert elements, so the
+/// PUBLIC-clearance `declare` event — readable by a RESTRICTED reader — never carries `800`.
+#[test]
+fn i15_covert_value_never_leaks_via_declare_reality() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[3];\n\
+         mossad { allocate(b, 0, 800); }\n\
+         allocate(b, 1, 5);\n\
+         allocate(b, 2, 5);\n\
+         declare(balanced(b));");
+    let restricted = emit::project(&st, Clearance::Restricted, Audience::Record).join("\n");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    // The declare-reality line on the RESTRICTED face redacts the covert slot.
+    assert!(
+        restricted.contains("reality: b=[[REDACTED], 5, 5]"),
+        "the declare reality must redact the covert slot for a RESTRICTED reader: {restricted:?}"
+    );
+    assert!(
+        !restricted.contains("800"),
+        "the covert value 800 must never reach a RESTRICTED reader: {restricted:?}"
+    );
+    // Only the סודי insider sees the real value.
+    assert!(sodi.contains("800"), "the סודי insider still sees 800");
+}
+
+/// I15 (fix): the leak self-check is structural (masked-render), so a covert value that
+/// collides with the render's own boilerplate (e.g. `1` inside "1 slot(s)" / "I15") does not
+/// false-trip the debug assertion. This program must simply run without a panic.
+#[test]
+fn i15_small_covert_value_does_not_false_trip_the_guard() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         mossad { allocate(b, 0, 1); }\n\
+         allocate(b, 1, 7);");
+    // The emit path runs the I15 debug assertion; reaching here means it did not false-fire.
+    let _ = emit::emit(&st);
+    assert!(st.runtime_error.is_none());
+}
+
+/// I15-adjacent (fix): the PUBLIC length excludes covert entries, matching the OFFICIAL
+/// "structures remaining" face — a covert push never leaks its existence into a readable value.
+#[test]
+fn i15_public_length_excludes_covert_entries() {
+    let st = run("@operation(\"Solid Ground\")\n\
+         let l = facts_on_the_ground();\n\
+         push(l, \"public-1\");\n\
+         mossad { push(l, \"secret\"); }\n\
+         n = length(l);\n\
+         declare(n == 1);");
+    // length() counted only the public entry ⇒ the claim n==1 is true ⇒ no discrepancy.
+    assert_eq!(st.discrepancy_count(), 0);
+    assert_eq!(st.env.get("n"), Some(&Val::Int(1)));
+    // The real store still retains both (the covert one is not deleted).
+    match st.env.get("l") {
+        Some(Val::FactsList { entries, .. }) => assert_eq!(entries.len(), 2),
+        other => panic!("l must be a FactsList, got {other:?}"),
+    }
+}

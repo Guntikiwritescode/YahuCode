@@ -25,6 +25,14 @@ are each replaced by a thematic mechanism that is load-bearing:
   the **OFFICIAL** press release beside the **ACTUAL** candid truth, plus a
   discrepancy count. The run *is* the joke.
 
+Three **collections** carry the same one-way-truth discipline: an **Apportionment**
+(array) that proclaims an equal split over a skewed one, a **FactsList** (list) that
+delists entries but never deletes them, and a **Registry** (map) that proclaims one
+law while routing cases to different courts. In every case the real contents only
+accrete and stay reconstructible to a cleared reader; nothing is ever erased. See
+[`LANGUAGE.md`](LANGUAGE.md) for the reference and [`docs/sources.md`](docs/sources.md)
+anchor 17 for the Registry's real-world anchor.
+
 ## Build, run, test
 
 ```sh

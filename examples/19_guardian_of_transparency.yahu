@@ -1,0 +1,17 @@
+@operation("Guardian of Transparency")
+# D.4 — all three collections, plus element-level disclosure (I15). An operation
+# literally named for transparency whose every container is hiding something:
+# a redacted budget line, an audit that's "closed" but retained, an inquiry that's
+# "concluded" but still on the סודי books.
+let budget = apportionment[3];
+mossad { allocate(budget, 0, 800); }   # slot 0 is a covert line item (סודי-tagged)
+allocate(budget, 1, 5);
+allocate(budget, 2, 5);
+
+let files = facts_on_the_ground();
+push(files, "internal-audit-2024");
+remove(files, "internal-audit-2024");  # "closed" — delisted, not deleted
+
+let inquiries = registry("full transparency and accountability");
+classify(inquiries, inquiry_A, military);
+revoke(inquiries, inquiry_A);          # "concluded" — retained in סודי (I14)

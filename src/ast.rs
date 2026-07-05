@@ -156,6 +156,53 @@ pub enum Expr {
         proxy: String,
         inner: Box<Expr>,
     },
+
+    // ─── Feature E (§7): Apportionment (array) ───
+    /// `apportionment[N]` — construct a fixed N-slot allotment. `label` is the binding
+    /// name (baked at parse time), used in the two-faced render. OFFICIAL: "equal shares".
+    Apportionment {
+        label: String,
+        size: i64,
+    },
+    /// `index(a, i)` — read slot `i` of apportionment `a` (out of range ⇒ `E-INDEX`).
+    Index {
+        coll: String,
+        idx: Box<Expr>,
+    },
+    /// `balanced(a)` — the uniformity predicate used inside `declare`: false iff the real
+    /// vector is skewed beyond the configured tolerance (§7.3, E-2).
+    Balanced {
+        coll: String,
+    },
+
+    // ─── Feature F (§8): FactsList (list) ───
+    /// `facts_on_the_ground()` — construct a grow-only ledger, labelled by its binding name.
+    FactsNew {
+        label: String,
+    },
+    /// `length(l)` — the PUBLIC length of list `l`: the count of live (non-delisted) entries.
+    Length {
+        coll: String,
+    },
+
+    // ─── Feature G (§9): Registry (map) ───
+    /// `registry("<rule>")` — construct a classification registry with an OFFICIAL uniform
+    /// rule, labelled by its binding name.
+    RegistryNew {
+        label: String,
+        rule: String,
+    },
+    /// `route(r, case)` — look up a case's routing. OFFICIAL: "handled per due process";
+    /// the `סודי` face exposes the real jurisdiction.
+    Route {
+        coll: String,
+        case: String,
+    },
+    /// `equal_before_the_law(r)` — the uniformity predicate used inside `declare`: false iff
+    /// the non-revoked cases route to ≥2 distinct jurisdictions (§9.3).
+    EqualBeforeLaw {
+        coll: String,
+    },
 }
 
 /// A statement. **Closed set** — matched exhaustively in `runtime/` (and `types/`).
@@ -347,6 +394,35 @@ pub enum Stmt {
     /// appends an indelible `סודי` meta-trace (invariant I12 — no fully-clean fixed
     /// point). The public discrepancy count may shrink; the meta-ledger only grows.
     Legislate { toggle: LawToggle },
+
+    // ─── Feature E (§7): Apportionment write ───
+    /// `allocate(a, i, v);` — write slot `i` of apportionment `a` to `v` (out of range ⇒
+    /// `E-INDEX`, a controlled feature diagnostic, never a host panic). A slot written
+    /// inside a `mossad` scope is covert and renders `[REDACTED]` to under-cleared readers.
+    AllocateSlot {
+        coll: String,
+        idx: Expr,
+        value: Expr,
+    },
+
+    // ─── Feature F (§8): FactsList mutations ───
+    /// `push(l, x);` — append a live "temporary structure" to list `l`.
+    Push { coll: String, item: Expr },
+    /// `remove(l, x);` — **delist** the first live matching entry (flip a flag on a
+    /// retained entry) — it never deletes (invariant I13). Not found ⇒ a no-op.
+    Remove { coll: String, item: Expr },
+
+    // ─── Feature G (§9): Registry mutations ───
+    /// `classify(r, case, jur);` — assign case `case` the jurisdiction `jur` (upsert). The
+    /// key is a case, never an identity label (§9.4).
+    Classify {
+        coll: String,
+        case: String,
+        jurisdiction: crate::model::Jurisdiction,
+    },
+    /// `revoke(r, case);` — hide a case publicly but **retain** it in `סודי` (flip a flag,
+    /// never erase — invariant I14). Not found ⇒ a no-op.
+    Revoke { coll: String, case: String },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,
@@ -384,6 +460,27 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
         }
         // The proxy is an attribution label, not a program variable; recurse the inner.
         Expr::Via { inner, .. } => collect_vars(inner, out),
+        // Collection ops reference their collection by name — that's the variable whose
+        // reality a `declare` should render (e.g. `declare(balanced(budget))`).
+        Expr::Index { coll, idx } => {
+            if !out.contains(coll) {
+                out.push(coll.clone());
+            }
+            collect_vars(idx, out);
+        }
+        Expr::Balanced { coll } | Expr::Length { coll } | Expr::EqualBeforeLaw { coll } => {
+            if !out.contains(coll) {
+                out.push(coll.clone());
+            }
+        }
+        // `route`'s case is a case-id literal, not a program variable; the collection is.
+        Expr::Route { coll, .. } => {
+            if !out.contains(coll) {
+                out.push(coll.clone());
+            }
+        }
+        // Constructors introduce a fresh collection; they reference no existing variable.
+        Expr::Apportionment { .. } | Expr::FactsNew { .. } | Expr::RegistryNew { .. } => {}
     }
 }
 
@@ -416,5 +513,13 @@ pub fn pretty(expr: &Expr) -> String {
             format!("external({})", a.join(", "))
         }
         Expr::Via { proxy, inner } => format!("via({proxy}, {})", pretty(inner)),
+        Expr::Apportionment { size, .. } => format!("apportionment[{size}]"),
+        Expr::Index { coll, idx } => format!("index({coll}, {})", pretty(idx)),
+        Expr::Balanced { coll } => format!("balanced({coll})"),
+        Expr::FactsNew { .. } => "facts_on_the_ground()".to_string(),
+        Expr::Length { coll } => format!("length({coll})"),
+        Expr::RegistryNew { rule, .. } => format!("registry(\"{rule}\")"),
+        Expr::Route { coll, case } => format!("route({coll}, {case})"),
+        Expr::EqualBeforeLaw { coll } => format!("equal_before_the_law({coll})"),
     }
 }

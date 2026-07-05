@@ -10,7 +10,7 @@
 use crate::ast::{BinOp, Expr, InertKind, LawToggle, Program, Stance, Stmt, UnOp};
 use crate::euphemism;
 use crate::lexer::{lex, Tok, Token};
-use crate::model::{Audience, Clearance, SODI};
+use crate::model::{Audience, Clearance, Jurisdiction, SODI};
 
 /// A parse failure (loud, never swallowed — §12).
 #[derive(Clone, Debug, PartialEq)]
@@ -236,6 +236,22 @@ impl Parser {
                 "foreclose" => self.position(Stance::Foreclose),
                 // Feature D — legislate (closed toggle set).
                 "legislate" => self.legislate(),
+                // Feature E/F/G — collection mutations (statements).
+                "allocate" => self.allocate_slot(),
+                "push" => self.push_or_remove(true),
+                "remove" => self.push_or_remove(false),
+                "classify" => self.classify(),
+                "revoke" => self.revoke(),
+                // Feature E/F/G — a bare collection *accessor* used as a statement (e.g.
+                // `route(court, case_A);` in D.3). Parse it as an expression statement, the
+                // way a bare `via(...)` is handled above.
+                "index" | "length" | "route" | "balanced" | "equal_before_the_law"
+                    if *self.la(1) == Tok::LParen =>
+                {
+                    let e = self.expr()?;
+                    self.eat(&Tok::Semi)?;
+                    Ok(Stmt::ExprStmt(e))
+                }
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -395,11 +411,55 @@ impl Parser {
         Ok(arg)
     }
 
-    /// `let name = (allocate|establish_commission|settlement)(what);`
+    /// `let name = (allocate|establish_commission|settlement)(what);`, or a **collection
+    /// constructor** `let name = (apportionment[N]|facts_on_the_ground()|registry("rule"));`.
+    /// A constructor binds its `label` from `name` (the binding is where a collection learns
+    /// its subject label for the render).
     fn let_binding(&mut self) -> Result<Stmt, ParseError> {
         self.next(); // 'let'
         let name = self.eat_ident()?;
         self.eat(&Tok::Eq)?;
+
+        // Collection constructors: the RHS is an expression, evaluated by the reused
+        // `Assign` path; the collection's real contents live in the ACTUAL environment.
+        if let Tok::Ident(kw) = self.peek().clone() {
+            match kw.as_str() {
+                "apportionment" => {
+                    self.next();
+                    self.eat(&Tok::LBracket)?;
+                    let size = self.eat_int()?;
+                    self.eat(&Tok::RBracket)?;
+                    self.eat(&Tok::Semi)?;
+                    return Ok(Stmt::Assign {
+                        var: name.clone(),
+                        value: Expr::Apportionment { label: name, size },
+                    });
+                }
+                "facts_on_the_ground" => {
+                    self.next();
+                    self.eat(&Tok::LParen)?;
+                    self.eat(&Tok::RParen)?;
+                    self.eat(&Tok::Semi)?;
+                    return Ok(Stmt::Assign {
+                        var: name.clone(),
+                        value: Expr::FactsNew { label: name },
+                    });
+                }
+                "registry" => {
+                    self.next();
+                    self.eat(&Tok::LParen)?;
+                    let rule = self.eat_string()?;
+                    self.eat(&Tok::RParen)?;
+                    self.eat(&Tok::Semi)?;
+                    return Ok(Stmt::Assign {
+                        var: name.clone(),
+                        value: Expr::RegistryNew { label: name, rule },
+                    });
+                }
+                _ => {}
+            }
+        }
+
         let kind = self.eat_ident()?;
         self.eat(&Tok::LParen)?;
         let what = self.eat_ident()?;
@@ -413,7 +473,8 @@ impl Parser {
                 subject: what,
             }),
             other => self.err(format!(
-                "`let` binding must be allocate/settlement/establish_commission, got `{other}`"
+                "`let` binding must be allocate/settlement/establish_commission or a \
+                 collection constructor (apportionment/facts_on_the_ground/registry), got `{other}`"
             )),
         }
     }
@@ -471,6 +532,79 @@ impl Parser {
         self.eat(&Tok::RParen)?;
         self.eat(&Tok::Semi)?;
         Ok(Stmt::HumanShields { verb, target })
+    }
+
+    /// `allocate(a, i, v);` — write slot `i` of apportionment `a` (Feature E).
+    fn allocate_slot(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'allocate'
+        self.eat(&Tok::LParen)?;
+        let coll = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let idx = self.expr()?;
+        self.eat(&Tok::Comma)?;
+        let value = self.expr()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::AllocateSlot { coll, idx, value })
+    }
+
+    /// `push(l, x);` (`is_push`) / `remove(l, x);` — append / delist a list entry (Feature F).
+    fn push_or_remove(&mut self, is_push: bool) -> Result<Stmt, ParseError> {
+        self.next(); // 'push' / 'remove'
+        self.eat(&Tok::LParen)?;
+        let coll = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let item = self.expr()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        if is_push {
+            Ok(Stmt::Push { coll, item })
+        } else {
+            Ok(Stmt::Remove { coll, item })
+        }
+    }
+
+    /// The jurisdiction keyword inside `classify(...)` — a **closed** set (Feature G, G-K5).
+    fn jurisdiction(&mut self) -> Result<Jurisdiction, ParseError> {
+        let word = self.eat_ident()?;
+        match word.as_str() {
+            "military" => Ok(Jurisdiction::Military),
+            "civilian" => Ok(Jurisdiction::Civilian),
+            other => self.err(format!(
+                "unknown jurisdiction `{other}` (expected `military` or `civilian`)"
+            )),
+        }
+    }
+
+    /// `classify(r, case, jur);` — assign a case a jurisdiction (Feature G). The `case` is a
+    /// case-id, captured as a key literal — never evaluated as an identity (§9.4, G-K1).
+    fn classify(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'classify'
+        self.eat(&Tok::LParen)?;
+        let coll = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let case = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let jurisdiction = self.jurisdiction()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Classify {
+            coll,
+            case,
+            jurisdiction,
+        })
+    }
+
+    /// `revoke(r, case);` — hide a case publicly, retain it in `סודי` (Feature G, I14).
+    fn revoke(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'revoke'
+        self.eat(&Tok::LParen)?;
+        let coll = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let case = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Revoke { coll, case })
     }
 
     /// `bribe(name, amount);`
@@ -796,6 +930,49 @@ impl Parser {
                             proxy,
                             inner: Box::new(inner),
                         })
+                    }
+                    // Feature E — `index(a, i)`: read a slot. Resolved before the generic
+                    // call table (Appendix A note: collection ops overlap `Call`).
+                    "index" if *self.peek() == Tok::LParen => {
+                        self.next(); // '('
+                        let coll = self.eat_ident()?;
+                        self.eat(&Tok::Comma)?;
+                        let idx = self.expr()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Index {
+                            coll,
+                            idx: Box::new(idx),
+                        })
+                    }
+                    // Feature E — `balanced(a)`: the uniformity predicate (used in declare).
+                    "balanced" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let coll = self.eat_ident()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Balanced { coll })
+                    }
+                    // Feature F — `length(l)`: the PUBLIC (live) length.
+                    "length" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let coll = self.eat_ident()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Length { coll })
+                    }
+                    // Feature G — `route(r, case)`: look up a case's routing.
+                    "route" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let coll = self.eat_ident()?;
+                        self.eat(&Tok::Comma)?;
+                        let case = self.eat_ident()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Route { coll, case })
+                    }
+                    // Feature G — `equal_before_the_law(r)`: the uniformity predicate.
+                    "equal_before_the_law" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let coll = self.eat_ident()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::EqualBeforeLaw { coll })
                     }
                     _ => {
                         if *self.peek() == Tok::LParen {

@@ -1,0 +1,9 @@
+@operation("Iron Equity")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   balanced(budget)
+  │   budget apportioned equally across 6 districts — equal shares for all
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   claim[balanced(budget)] — reality: budget=[940, 12, 8, 11, 9, 10]  ⇒ FALSE
+  │   budget: [940, 12, 8, 11, 9, 10] — proclaimed 'equal', but slot 0 holds 940 of 990 (94.9%); the other 5 share 5.1% [OFFICIAL 'equal' vs ACTUAL skew — anchor #17]
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 1  (read-never-by-default)

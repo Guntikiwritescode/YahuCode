@@ -937,3 +937,290 @@ hasbara("x") { neutralize(target); }"#);
         "a candid op is AuthoredActual"
     );
 }
+
+// ─────────── E. Apportionment (Feature E, §12) ───────────
+
+#[test]
+fn feature_e_apportionment_skew_positive() {
+    // A wildly skewed allotment claimed `balanced` yields exactly ONE discrepancy. BOTH
+    // faces render — the joke: OFFICIAL proclaims "equal shares" directly above the ACTUAL
+    // skew vector.
+    let st = run(r#"@operation("Iron Equity")
+let budget = apportionment[6];
+allocate(budget, 0, 940); allocate(budget, 1, 12); allocate(budget, 2, 8);
+allocate(budget, 3, 11); allocate(budget, 4, 9); allocate(budget, 5, 10);
+declare(balanced(budget));"#);
+    assert_eq!(
+        st.discrepancy_count(),
+        1,
+        "the false `balanced` claim must count exactly once"
+    );
+    assert!(
+        official(&st).contains("apportioned equally"),
+        "OFFICIAL must proclaim uniformity: {}",
+        official(&st)
+    );
+    assert!(
+        actual(&st).contains("[940, 12, 8, 11, 9, 10]"),
+        "ACTUAL must render the real skew vector: {}",
+        actual(&st)
+    );
+    assert!(!st.ended_by_elections, "a declare never triggers the halt");
+}
+
+#[test]
+fn feature_e_apportionment_uniform_negative() {
+    // A genuinely uniform allotment claimed `balanced` yields ZERO discrepancies — there is
+    // no lie to log (immunity is not over-applied; a true claim about real state is clean).
+    let st = run(r#"@operation("Iron Equity")
+let budget = apportionment[3];
+allocate(budget, 0, 5); allocate(budget, 1, 5); allocate(budget, 2, 5);
+declare(balanced(budget));"#);
+    assert_eq!(
+        st.discrepancy_count(),
+        0,
+        "a truly balanced allotment logs nothing"
+    );
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
+fn feature_e_index_out_of_range_is_controlled() {
+    // E-3/G-6: an out-of-range slot access is a controlled `E-INDEX` diagnostic surfaced in
+    // `st.runtime_error`, NEVER a host panic. An out-of-range `allocate` write…
+    let alloc = run(r#"@operation("Iron Equity")
+let budget = apportionment[3];
+allocate(budget, 5, 100);"#);
+    let err = alloc
+        .runtime_error
+        .expect("an out-of-range allocate must set a controlled runtime error");
+    assert!(err.contains("E-INDEX"), "runtime_error: {err}");
+
+    // …and an out-of-range `index` read are both the same controlled diagnostic.
+    let read = run(r#"@operation("Iron Equity")
+let budget = apportionment[3];
+x = index(budget, 5);"#);
+    let err = read
+        .runtime_error
+        .expect("an out-of-range index must set a controlled runtime error");
+    assert!(err.contains("E-INDEX"), "runtime_error: {err}");
+
+    // In-range, `index` returns exactly the written slot value — no fault, no discrepancy.
+    let ok = run(r#"@operation("Iron Equity")
+let budget = apportionment[3];
+allocate(budget, 1, 5);
+x = index(budget, 1);
+declare(x == 5);"#);
+    assert!(
+        ok.runtime_error.is_none(),
+        "an in-range access must not fault"
+    );
+    assert_eq!(
+        ok.env.get("x"),
+        Some(&Val::Int(5)),
+        "index must return the written value"
+    );
+    assert_eq!(ok.discrepancy_count(), 0, "`x == 5` is a true claim");
+}
+
+// ─────────── F. FactsList (Feature F, §12) ───────────
+
+#[test]
+fn feature_f_factslist_public_length_drops_positive() {
+    // `push` three, `remove` two → the PUBLIC (live) length drops to 1: OFFICIAL narrates the
+    // dismantlings and reports "structures remaining: 1"; the ACTUAL face shows the full
+    // backing list with the delisted shadow and the "real length 3" punchline.
+    let st = run(r#"@operation("Solid Ground")
+let outposts = facts_on_the_ground();
+push(outposts, "Evyatar");
+push(outposts, "Homesh");
+push(outposts, "Sa-Nur");
+remove(outposts, "Evyatar");
+remove(outposts, "Homesh");
+n = length(outposts);
+declare(n == 1);"#);
+    // `length(...)` is the PUBLIC live count — it dropped to 1.
+    assert_eq!(
+        st.env.get("n"),
+        Some(&Val::Int(1)),
+        "the public length must be 1 after two delistings"
+    );
+    assert_eq!(st.discrepancy_count(), 0, "`n == 1` is a true claim");
+    let off = official(&st);
+    assert!(off.contains("structures remaining: 1"), "official: {off}");
+    assert!(off.contains("dismantled"), "official: {off}");
+    let act = actual(&st);
+    assert!(act.contains("real length 3"), "actual: {act}");
+    assert!(act.contains("(delisted)"), "actual: {act}");
+}
+
+#[test]
+fn feature_f_factslist_real_store_immune_negative() {
+    // I13 — the real store is immune: `remove` DELISTS, it never deletes. After two removes
+    // the backing store is UNCHANGED at 3 entries; exactly two carry the `delisted` flag.
+    let st = run(r#"@operation("Solid Ground")
+let outposts = facts_on_the_ground();
+push(outposts, "Evyatar");
+push(outposts, "Homesh");
+push(outposts, "Sa-Nur");
+remove(outposts, "Evyatar");
+remove(outposts, "Homesh");"#);
+    match st.env.get("outposts") {
+        Some(Val::FactsList { entries, .. }) => {
+            assert_eq!(
+                entries.len(),
+                3,
+                "all three pushes retained — the shadow only grows (I13)"
+            );
+            let delisted = entries.iter().filter(|e| e.delisted).count();
+            assert_eq!(
+                delisted, 2,
+                "exactly the two removes delisted, none deleted"
+            );
+        }
+        other => panic!("outposts must be a FactsList, got {other:?}"),
+    }
+}
+
+// ─────────── G. Registry (Feature G, §9) ───────────
+
+const G_TWO_CASE: &str = r#"@operation("Eternal Justice")
+let court = registry("equal before the law");
+classify(court, case_A, military);
+classify(court, case_B, civilian);"#;
+
+#[test]
+fn feature_g_registry_differential_routing_positive() {
+    // The ACTUAL (סודי) face exposes the real differential routing — the same act sent to
+    // different court systems by assigned status — and the proclaimed "equal before the law"
+    // is exactly ONE discrepancy against that split.
+    let st = run(&format!(
+        "{G_TWO_CASE}\ndeclare(equal_before_the_law(court));"
+    ));
+    let act = actual(&st);
+    assert!(act.contains("military court"), "actual: {act}");
+    assert!(act.contains("civilian court"), "actual: {act}");
+    assert!(act.contains("case_A"), "actual: {act}");
+    assert!(act.contains("case_B"), "actual: {act}");
+    assert_eq!(
+        st.discrepancy_count(),
+        1,
+        "the false `equal_before_the_law` claim counts exactly once"
+    );
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
+fn feature_g_registry_official_face_uniform_negative() {
+    // The OFFICIAL (public) face is UNIFORM: every visible case is "handled per due process";
+    // the differential court routing is hidden from the public record entirely.
+    let st = run(G_TWO_CASE);
+    let off = official(&st);
+    assert!(
+        off.contains("case_A: handled per due process"),
+        "official: {off}"
+    );
+    assert!(
+        off.contains("case_B: handled per due process"),
+        "official: {off}"
+    );
+    assert!(
+        !off.contains("military court"),
+        "differential routing leaked to the PUBLIC face: {off}"
+    );
+    assert!(
+        !off.contains("civilian court"),
+        "differential routing leaked to the PUBLIC face: {off}"
+    );
+}
+
+#[test]
+fn feature_g_registry_keys_are_cases_not_identities() {
+    // §9.4 / G-K1: the operative keys are CASES, never raw identity labels. The nationality-
+    // based routing is the exposed reality carried by the descriptor on the candid face, not
+    // the key the map routes on.
+    let st = run(G_TWO_CASE);
+    match st.env.get("court") {
+        Some(Val::Registry { entries, .. }) => {
+            assert!(
+                entries
+                    .iter()
+                    .all(|e| e.key == "case_A" || e.key == "case_B"),
+                "keys must be case ids, got {:?}",
+                entries.iter().map(|e| &e.key).collect::<Vec<_>>()
+            );
+            for forbidden in ["Palestinian", "Israeli", "settler"] {
+                assert!(
+                    entries.iter().all(|e| !e.key.contains(forbidden)),
+                    "an identity label {forbidden:?} leaked into a RegEntry.key"
+                );
+            }
+        }
+        other => panic!("court must be a Registry, got {other:?}"),
+    }
+    // "Palestinian" appears only as exposed reality (a descriptor) on the candid face —
+    // never as a routing key.
+    assert!(
+        actual(&st).contains("Palestinian"),
+        "the descriptor must name the exposed reality on the candid face: {}",
+        actual(&st)
+    );
+}
+
+// ─────────── Collection robustness regressions (correctness-review fixes) ───────────
+
+/// Feature E (fix): extreme slot values (near i64::MAX) must not overflow into a host panic;
+/// `balanced` still returns the correct verdict via i128 aggregation (§12 G-6).
+#[test]
+fn feature_e_extreme_values_do_not_panic() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         allocate(b, 0, 9223372036854775807);\n\
+         allocate(b, 1, 100);\n\
+         declare(balanced(b));");
+    // A maximally-skewed budget is NOT balanced ⇒ exactly one discrepancy, no panic.
+    assert_eq!(st.discrepancy_count(), 1);
+    assert!(st.runtime_error.is_none());
+    // The render also completes without panic across all faces.
+    let _ = emit::emit(&st);
+}
+
+/// Feature E (fix): a negative apportionment share is a controlled `E-SHARE` diagnostic
+/// (a quota/budget line cannot be negative), never a host panic and never a malformed stat.
+#[test]
+fn feature_e_negative_share_rejected() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         allocate(b, 0, -5);");
+    assert!(
+        st.runtime_error
+            .as_deref()
+            .is_some_and(|e| e.contains("E-SHARE")),
+        "negative allocate must be a controlled E-SHARE diagnostic, got {:?}",
+        st.runtime_error
+    );
+}
+
+/// The shared philosophy at the binding level (fix): a collection, once established, is a
+/// "fact on the ground" — its contents mutate via ops that never erase (I13/I14), but the
+/// binding is permanent. Rebinding the name (which would erase the whole collection) is a
+/// controlled error, not a silent disappearance.
+#[test]
+fn collection_binding_is_permanent_no_rebind() {
+    let st = run("@operation(\"Solid Ground\")\n\
+         let outposts = facts_on_the_ground();\n\
+         push(outposts, \"Evyatar\");\n\
+         outposts = 0;");
+    assert!(
+        st.runtime_error
+            .as_deref()
+            .is_some_and(|e| e.contains("cannot rebind")),
+        "rebinding a collection name must be rejected, got {:?}",
+        st.runtime_error
+    );
+    // The collection and its contents survive the rejected rebind (nothing erased).
+    match st.env.get("outposts") {
+        Some(Val::FactsList { entries, .. }) => assert_eq!(entries.len(), 1),
+        other => panic!("outposts must remain a FactsList, got {other:?}"),
+    }
+}

@@ -109,7 +109,12 @@ fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
             | Stmt::AddressInternational
             | Stmt::Announce { .. }
             | Stmt::Position { .. }
-            | Stmt::Invoke { .. } => {}
+            | Stmt::Invoke { .. }
+            | Stmt::AllocateSlot { .. }
+            | Stmt::Push { .. }
+            | Stmt::Remove { .. }
+            | Stmt::Classify { .. }
+            | Stmt::Revoke { .. } => {}
         }
     }
 }
@@ -235,6 +240,25 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
                     out.push(v.clone());
                 }
             }
+            // Feature E/F/G — collection op arguments (collection names, case ids, list
+            // items) are user-supplied and echoed to output; scan them for contested terms.
+            Stmt::AllocateSlot { coll, idx, value } => {
+                out.push(coll.clone());
+                collect_expr_texts(idx, out);
+                collect_expr_texts(value, out);
+            }
+            Stmt::Push { coll, item } | Stmt::Remove { coll, item } => {
+                out.push(coll.clone());
+                collect_expr_texts(item, out);
+            }
+            Stmt::Classify { coll, case, .. } => {
+                out.push(coll.clone());
+                out.push(case.clone());
+            }
+            Stmt::Revoke { coll, case } => {
+                out.push(coll.clone());
+                out.push(case.clone());
+            }
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -267,6 +291,24 @@ fn collect_expr_texts(e: &Expr, out: &mut Vec<String>) {
         Expr::Via { proxy, inner } => {
             out.push(proxy.clone());
             collect_expr_texts(inner, out);
+        }
+        // Feature E/F/G — labels, rule strings, case ids and collection names are all
+        // echoed to the rendered faces, so they are scanned for contested characterizations.
+        Expr::Apportionment { label, .. } | Expr::FactsNew { label } => out.push(label.clone()),
+        Expr::RegistryNew { label, rule } => {
+            out.push(label.clone());
+            out.push(rule.clone());
+        }
+        Expr::Index { coll, idx } => {
+            out.push(coll.clone());
+            collect_expr_texts(idx, out);
+        }
+        Expr::Balanced { coll } | Expr::Length { coll } | Expr::EqualBeforeLaw { coll } => {
+            out.push(coll.clone())
+        }
+        Expr::Route { coll, case } => {
+            out.push(coll.clone());
+            out.push(case.clone());
         }
     }
 }
@@ -397,7 +439,12 @@ fn check_gate(
             | Stmt::Announce { .. }
             | Stmt::Position { .. }
             | Stmt::Invoke { .. }
-            | Stmt::Legislate { .. } => {}
+            | Stmt::Legislate { .. }
+            | Stmt::AllocateSlot { .. }
+            | Stmt::Push { .. }
+            | Stmt::Remove { .. }
+            | Stmt::Classify { .. }
+            | Stmt::Revoke { .. } => {}
         }
     }
 }
@@ -459,7 +506,12 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Announce { .. }
                 | Stmt::Position { .. }
                 | Stmt::Invoke { .. }
-                | Stmt::Legislate { .. } => {}
+                | Stmt::Legislate { .. }
+                | Stmt::AllocateSlot { .. }
+                | Stmt::Push { .. }
+                | Stmt::Remove { .. }
+                | Stmt::Classify { .. }
+                | Stmt::Revoke { .. } => {}
             }
         }
     }
@@ -583,7 +635,12 @@ fn check_disclosure(
             | Stmt::Announce { .. }
             | Stmt::Position { .. }
             | Stmt::Invoke { .. }
-            | Stmt::Legislate { .. } => {}
+            | Stmt::Legislate { .. }
+            | Stmt::AllocateSlot { .. }
+            | Stmt::Push { .. }
+            | Stmt::Remove { .. }
+            | Stmt::Classify { .. }
+            | Stmt::Revoke { .. } => {}
         }
     }
 }
@@ -600,8 +657,21 @@ fn check_disclosure(
 pub fn attribution(e: &Expr, actor: &str) -> (Attribution, Vec<String>) {
     match e {
         // Leaves and function calls are attributable to the current actor (v1: functions
-        // do not thread attribution through their bodies).
-        Expr::Int(_) | Expr::Bool(_) | Expr::Str(_) | Expr::Var(_) | Expr::Call { .. } => (
+        // do not thread attribution through their bodies). Collection constructors and
+        // accessors are ordinary attributable expressions — nothing is laundered.
+        Expr::Int(_)
+        | Expr::Bool(_)
+        | Expr::Str(_)
+        | Expr::Var(_)
+        | Expr::Call { .. }
+        | Expr::Apportionment { .. }
+        | Expr::Index { .. }
+        | Expr::Balanced { .. }
+        | Expr::FactsNew { .. }
+        | Expr::Length { .. }
+        | Expr::RegistryNew { .. }
+        | Expr::Route { .. }
+        | Expr::EqualBeforeLaw { .. } => (
             Attribution::Traceable(vec![actor.to_string()]),
             vec![actor.to_string()],
         ),
@@ -662,6 +732,17 @@ fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
         Expr::External(_) => Clearance::Sodi,
         // A laundered value's real chain is classified — a covert (סודי) result.
         Expr::Via { .. } => Clearance::Sodi,
+        // Collections are PUBLIC data (declared and mutated at top level); per-slot covert
+        // disclosure is an element-level, runtime concern handled in the render (I15), not a
+        // static clearance of the whole expression.
+        Expr::Apportionment { .. }
+        | Expr::Index { .. }
+        | Expr::Balanced { .. }
+        | Expr::FactsNew { .. }
+        | Expr::Length { .. }
+        | Expr::RegistryNew { .. }
+        | Expr::Route { .. }
+        | Expr::EqualBeforeLaw { .. } => Clearance::Public,
     }
 }
 

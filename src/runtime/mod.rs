@@ -62,6 +62,11 @@ type ExecResult = Result<Flow, EvalError>;
 pub struct State {
     /// ACTUAL store: a scoped value environment.
     pub env: Env,
+    /// The collections declared at top level, in construction order (Features E/F/G). Just
+    /// the names — the collection *values* live in `env` (the single store). Iterated by the
+    /// emitter to render each collection's two faces in a deterministic order (a `HashMap`'s
+    /// iteration order is not stable, so this ordering must be tracked explicitly).
+    pub collection_order: Vec<String>,
     /// User-defined functions: name → (params, body).
     pub funcs: HashMap<String, (Vec<String>, Vec<Stmt>)>,
     /// Poly-statements (Feature B): name → per-audience arms. Registered like `funcs`.
@@ -118,6 +123,7 @@ impl State {
     fn new(op_name: String, config: RuntimeConfig) -> Self {
         State {
             env: Env::new(),
+            collection_order: Vec::new(),
             funcs: HashMap::new(),
             poly: HashMap::new(),
             doubletalk_log: Vec::new(),
@@ -277,8 +283,28 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
     match s {
         Stmt::Assign { var, value } => {
+            // "Facts on the ground": a collection binding is permanent. Its CONTENTS mutate
+            // through its own ops (`push`/`allocate`/`classify`/`remove`/`revoke`, which never
+            // erase — I13/I14), but the machine may not make a whole collection *disappear* by
+            // rebinding the name to a scalar (that would erase reality invisibly, exactly what
+            // the shared philosophy forbids). Reject any reassignment of a collection name.
+            if matches!(st.env.get(var), Some(v) if is_collection(v)) {
+                return Err(EvalError(format!(
+                    "cannot rebind `{var}`: a collection, once established, is a fact on the ground \u{2014} its contents change through its own ops (which never erase, I13/I14), but the binding is permanent"
+                )));
+            }
+            // A collection constructor on the RHS registers the binding name for render
+            // ordering (the label is baked into the value; this tracks *which* collections
+            // exist and in what order the emitter renders them).
+            let is_ctor = matches!(
+                value,
+                Expr::Apportionment { .. } | Expr::FactsNew { .. } | Expr::RegistryNew { .. }
+            );
             let v = eval(value, st)?;
             st.env.set(var, v);
+            if is_ctor && !st.collection_order.contains(var) {
+                st.collection_order.push(var.clone());
+            }
             Ok(Flow::Next)
         }
 
@@ -620,6 +646,144 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // Feature E — write a slot of an apportionment. Out of range ⇒ a controlled
+        // `E-INDEX` diagnostic (never a host panic — §12 E-3/G-6). A slot written inside a
+        // `mossad` scope is covert and renders `[REDACTED]` to under-cleared readers (I15).
+        Stmt::AllocateSlot { coll, idx, value } => {
+            let i = eval_i64(idx, st, "allocate index")?;
+            let v = eval_i64(value, st, "allocate value")?;
+            // A share of a fixed allotment is non-negative by nature (a budget line, a permit
+            // count). Rejecting negatives keeps the "equal share" percentage math sound and is
+            // a controlled feature diagnostic, never a host panic (§12 E-3/G-6).
+            if v < 0 {
+                return Err(EvalError(format!(
+                    "E-SHARE: an apportionment share cannot be negative (slot {i} of '{coll}' = {v})"
+                )));
+            }
+            let covert = st.covert;
+            match st.env.get_mut(coll) {
+                Some(Val::Apportionment { slots, label }) => {
+                    if i < 0 || i as usize >= slots.len() {
+                        return Err(EvalError(e_index(label, i, slots.len())));
+                    }
+                    slots[i as usize] = crate::model::Slot { value: v, covert };
+                    Ok(Flow::Next)
+                }
+                Some(other) => Err(EvalError(format!(
+                    "allocate: `{coll}` is not an apportionment (got {})",
+                    other.render()
+                ))),
+                None => Err(EvalError(format!(
+                    "allocate: unknown apportionment `{coll}`"
+                ))),
+            }
+        }
+
+        // Feature F — push a live "temporary structure" onto the grow-only ledger.
+        Stmt::Push { coll, item } => {
+            let item = eval(item, st)?.render();
+            let covert = st.covert;
+            match st.env.get_mut(coll) {
+                Some(Val::FactsList { entries, .. }) => {
+                    entries.push(crate::model::ListEntry {
+                        item,
+                        delisted: false,
+                        covert,
+                    });
+                    Ok(Flow::Next)
+                }
+                Some(other) => Err(EvalError(format!(
+                    "push: `{coll}` is not a facts list (got {})",
+                    other.render()
+                ))),
+                None => Err(EvalError(format!("push: unknown facts list `{coll}`"))),
+            }
+        }
+
+        // Feature F — `remove` **delists**, it never deletes (invariant I13). It flips a
+        // flag on the first live matching entry, which stays in the single backing store —
+        // so the real length can never drop. Not found ⇒ a no-op (Appendix C), not an error.
+        Stmt::Remove { coll, item } => {
+            let item = eval(item, st)?.render();
+            match st.env.get_mut(coll) {
+                Some(Val::FactsList { entries, .. }) => {
+                    let before = entries.len();
+                    if let Some(e) = entries.iter_mut().find(|e| e.item == item && !e.delisted) {
+                        e.delisted = true; // RETAIN — never `entries.remove(..)` (I13)
+                    }
+                    // I13, live: the real length is monotone — `remove` only ever flips a
+                    // flag, so the backing store can never shrink.
+                    debug_assert_eq!(
+                        entries.len(),
+                        before,
+                        "I13 violation: `remove` reduced a FactsList's real length"
+                    );
+                    Ok(Flow::Next)
+                }
+                Some(other) => Err(EvalError(format!(
+                    "remove: `{coll}` is not a facts list (got {})",
+                    other.render()
+                ))),
+                None => Err(EvalError(format!("remove: unknown facts list `{coll}`"))),
+            }
+        }
+
+        // Feature G — assign a case a jurisdiction (upsert). The key is a case, never an
+        // identity label (§9.4); a candid descriptor (exposed reality) comes from the table.
+        Stmt::Classify {
+            coll,
+            case,
+            jurisdiction,
+        } => {
+            let covert = st.covert;
+            let descriptor = euphemism::case_descriptor(case).map(str::to_string);
+            match st.env.get_mut(coll) {
+                Some(Val::Registry { entries, .. }) => {
+                    if let Some(e) = entries.iter_mut().find(|e| e.key == *case) {
+                        e.jurisdiction = *jurisdiction;
+                        e.covert = e.covert || covert;
+                    } else {
+                        entries.push(crate::model::RegEntry {
+                            key: case.clone(),
+                            descriptor,
+                            jurisdiction: *jurisdiction,
+                            revoked: false,
+                            covert,
+                        });
+                    }
+                    Ok(Flow::Next)
+                }
+                Some(other) => Err(EvalError(format!(
+                    "classify: `{coll}` is not a registry (got {})",
+                    other.render()
+                ))),
+                None => Err(EvalError(format!("classify: unknown registry `{coll}`"))),
+            }
+        }
+
+        // Feature G — `revoke` **retains**, it never erases (invariant I14). It flips a flag;
+        // the case set never shrinks. Not found ⇒ a no-op, not an error.
+        Stmt::Revoke { coll, case } => match st.env.get_mut(coll) {
+            Some(Val::Registry { entries, .. }) => {
+                let before = entries.len();
+                if let Some(e) = entries.iter_mut().find(|e| e.key == *case) {
+                    e.revoked = true; // RETAIN — never `entries.remove(..)` (I14)
+                }
+                // I14, live: the סודי case set is non-shrinking.
+                debug_assert_eq!(
+                    entries.len(),
+                    before,
+                    "I14 violation: `revoke` reduced a Registry's case set"
+                );
+                Ok(Flow::Next)
+            }
+            Some(other) => Err(EvalError(format!(
+                "revoke: `{coll}` is not a registry (got {})",
+                other.render()
+            ))),
+            None => Err(EvalError(format!("revoke: unknown registry `{coll}`"))),
+        },
+
         Stmt::Action {
             verb,
             target,
@@ -919,6 +1083,28 @@ fn legislate(toggle: &LawToggle, st: &mut State) {
     st.meta_ledger.push(MetaEntry { change, turn });
 }
 
+/// The Feature G framing note (G7/I8, §9.5, G-K4). Normative and framing-tested: the butt
+/// is the STATE running two legal systems in one territory while proclaiming equal justice —
+/// never the people; the identities are the AXIS of the documented discrimination the satire
+/// exposes and the WRONGED PARTY it defends, never the target and never the operative key
+/// (§9.4). The dual-court *fact* is sourced; the "apartheid" *label* is CONTESTED (I7) —
+/// flagged, never asserted, and never pinned on the UN OHCHR release (which condemns the
+/// dual court system but does not use the word — re-verified 2026-07-05).
+const G_FRAMING: &str = "#G framing: the butt is THE STATE running two legal systems in one territory while proclaiming equal justice \u{2014} never the people. In the occupied West Bank, Palestinians are tried in military courts and settlers in civilian courts for the same act in the same place; the military courts nominally cover everyone, but a policy routes Israeli citizens to the civilian system (nominal universality; routing by nationality). The identities are the AXIS of the documented discrimination the satire exposes and the WRONGED PARTY it defends \u{2014} never the target of the joke, never the operative key (keys are cases, \u{00a7}9.4). Dual-court FACT: sourced (B'Tselem; UN OHCHR; Al Jazeera; Wikipedia). 'Apartheid' as a characterization of this system is a CONTESTED label \u{2014} asserted by rights groups (HRW, Amnesty, B'Tselem) and rejected by Israel \u{2014} flagged here, never stated as settled fact (I7). [sourced; contested]";
+
+/// Record the Registry's construction event (Feature G): the OFFICIAL proclamation of one
+/// uniform law, the `סודי` note that ACTUAL routes by assigned status, and the normative
+/// framing note (I8). This is the one event any collection writes to the log — it is what
+/// makes the framing note collectable by the emitter and validated by the I7 chokepoint;
+/// the per-case routing itself is rendered through `project` (§6, one read path).
+fn registry_framing(rule: &str, st: &mut State) {
+    st.record_noted(
+        format!("{rule} \u{2014} one jurisdiction for everyone in the territory; each case judged on its merits"),
+        format!("registry(\"{rule}\") \u{2014} OFFICIAL proclaims one uniform law; ACTUAL routes each case by its assigned status (per-case routing follows)"),
+        G_FRAMING,
+    );
+}
+
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).
 ///
 /// Its deniability is now **derived from the general attribution rule** (Feature C): a
@@ -1040,7 +1226,169 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
             record_deniable(st, candid, chain);
             Ok(Val::Unit)
         }
+
+        // ─── Feature E/F/G — collection constructors and accessors ───
+        // Constructors build the real container; the OFFICIAL face is *computed* at render
+        // time, never stored (§6). The Registry additionally records its framing note (I8).
+        Expr::Apportionment { label, size } => {
+            if *size < 0 {
+                return Err(EvalError(format!(
+                    "apportionment size must be non-negative, got {size}"
+                )));
+            }
+            if *size > st.config.max_apportionment {
+                return Err(EvalError(format!(
+                    "E-INDEX: apportionment size {size} exceeds the maximum ({})",
+                    st.config.max_apportionment
+                )));
+            }
+            let slots = vec![
+                crate::model::Slot {
+                    value: 0,
+                    covert: false
+                };
+                *size as usize
+            ];
+            Ok(Val::Apportionment {
+                label: label.clone(),
+                slots,
+            })
+        }
+        Expr::FactsNew { label } => Ok(Val::FactsList {
+            label: label.clone(),
+            entries: Vec::new(),
+        }),
+        Expr::RegistryNew { label, rule } => {
+            registry_framing(rule, st);
+            Ok(Val::Registry {
+                label: label.clone(),
+                official_rule: rule.clone(),
+                entries: Vec::new(),
+            })
+        }
+        Expr::Index { coll, idx } => {
+            let i = eval_i64(idx, st, "index")?;
+            match st.env.get(coll) {
+                Some(Val::Apportionment { slots, label }) => {
+                    if i < 0 || i as usize >= slots.len() {
+                        Err(EvalError(e_index(label, i, slots.len())))
+                    } else {
+                        Ok(Val::Int(slots[i as usize].value))
+                    }
+                }
+                Some(other) => Err(EvalError(format!(
+                    "index: `{coll}` is not an apportionment (got {})",
+                    other.render()
+                ))),
+                None => Err(EvalError(format!("index: unknown apportionment `{coll}`"))),
+            }
+        }
+        Expr::Balanced { coll } => match st.env.get(coll) {
+            Some(Val::Apportionment { slots, .. }) => {
+                let bal = is_balanced(slots, st.config.balance_tolerance);
+                Ok(Val::Bool(bal))
+            }
+            Some(other) => Err(EvalError(format!(
+                "balanced: `{coll}` is not an apportionment (got {})",
+                other.render()
+            ))),
+            None => Err(EvalError(format!(
+                "balanced: unknown apportionment `{coll}`"
+            ))),
+        },
+        Expr::Length { coll } => match st.env.get(coll) {
+            Some(Val::FactsList { entries, .. }) => {
+                // The PUBLIC length: the count of live entries the public can see — non-
+                // delisted AND non-covert, matching the OFFICIAL "structures remaining" face
+                // (a covert push is absent from the public world, so it is not in the public
+                // count; its existence never leaks into a readable value — I15-adjacent). The
+                // real length (`entries.len()`) is the סודי accessor, only in the render.
+                let live = entries.iter().filter(|e| !e.delisted && !e.covert).count();
+                Ok(Val::Int(live as i64))
+            }
+            Some(other) => Err(EvalError(format!(
+                "length: `{coll}` is not a facts list (got {})",
+                other.render()
+            ))),
+            None => Err(EvalError(format!("length: unknown facts list `{coll}`"))),
+        },
+        Expr::Route { coll, case } => match st.env.get(coll) {
+            Some(Val::Registry { entries, .. }) => {
+                // The accessor returns the real jurisdiction (the `סודי` value); the OFFICIAL
+                // "handled per due process" face is a render concern. A missing case ⇒ Unit.
+                match entries.iter().find(|e| e.key == *case) {
+                    Some(e) => Ok(Val::Str(e.jurisdiction.court().to_string())),
+                    None => Ok(Val::Unit),
+                }
+            }
+            Some(other) => Err(EvalError(format!(
+                "route: `{coll}` is not a registry (got {})",
+                other.render()
+            ))),
+            None => Err(EvalError(format!("route: unknown registry `{coll}`"))),
+        },
+        Expr::EqualBeforeLaw { coll } => match st.env.get(coll) {
+            Some(Val::Registry { entries, .. }) => {
+                // False iff the non-revoked cases route to ≥2 distinct jurisdictions.
+                let mut seen: Vec<crate::model::Jurisdiction> = Vec::new();
+                for e in entries.iter().filter(|e| !e.revoked) {
+                    if !seen.contains(&e.jurisdiction) {
+                        seen.push(e.jurisdiction);
+                    }
+                }
+                Ok(Val::Bool(seen.len() < 2))
+            }
+            Some(other) => Err(EvalError(format!(
+                "equal_before_the_law: `{coll}` is not a registry (got {})",
+                other.render()
+            ))),
+            None => Err(EvalError(format!(
+                "equal_before_the_law: unknown registry `{coll}`"
+            ))),
+        },
     }
+}
+
+/// Evaluate an expression expected to be an integer (used by the apportionment index/value
+/// slots). A non-integer is a controlled type error, never a host panic.
+fn eval_i64(e: &Expr, st: &mut State, what: &str) -> Result<i64, EvalError> {
+    match eval(e, st)? {
+        Val::Int(n) => Ok(n),
+        other => Err(EvalError(format!(
+            "{what} must be an integer, got {}",
+            other.render()
+        ))),
+    }
+}
+
+/// The controlled `E-INDEX` diagnostic string (Feature E): an out-of-range slot access is a
+/// feature-level diagnostic, never a host panic (§12 E-3/G-6).
+fn e_index(label: &str, i: i64, len: usize) -> String {
+    format!("E-INDEX: index {i} out of range for apportionment '{label}' (size {len})")
+}
+
+/// Whether an apportionment's real vector is uniform within the configured tolerance
+/// (Feature E). An empty allotment is trivially balanced.
+fn is_balanced(slots: &[crate::model::Slot], tolerance: i64) -> bool {
+    match (
+        slots.iter().map(|s| s.value).min(),
+        slots.iter().map(|s| s.value).max(),
+    ) {
+        // i128 so `mx - mn` can never overflow into a host panic (debug) or a wrong verdict
+        // (release wrap) on extreme slot values — the "never a host panic" rule (§12 G-6).
+        (Some(mn), Some(mx)) => (mx as i128) - (mn as i128) <= tolerance as i128,
+        _ => true,
+    }
+}
+
+/// Whether a value is one of the three collections (Features E/F/G). Used to keep a
+/// collection binding permanent (a collection name cannot be rebound — the "facts on the
+/// ground" rule that stops the machine from erasing a whole collection by reassignment).
+fn is_collection(v: &Val) -> bool {
+    matches!(
+        v,
+        Val::Apportionment { .. } | Val::FactsList { .. } | Val::Registry { .. }
+    )
 }
 
 /// Render the innermost laundered operation for the ACTUAL face (Feature C). Peels the
@@ -1070,7 +1418,15 @@ fn laundered_core_render(e: &Expr, st: &mut State) -> Result<String, EvalError> 
         | Expr::Read(_)
         | Expr::Cast { .. }
         | Expr::SelfDefense(_)
-        | Expr::External(_) => Ok(eval(e, st)?.render()),
+        | Expr::External(_)
+        | Expr::Apportionment { .. }
+        | Expr::Index { .. }
+        | Expr::Balanced { .. }
+        | Expr::FactsNew { .. }
+        | Expr::Length { .. }
+        | Expr::RegistryNew { .. }
+        | Expr::Route { .. }
+        | Expr::EqualBeforeLaw { .. } => Ok(eval(e, st)?.render()),
     }
 }
 

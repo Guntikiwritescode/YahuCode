@@ -20,6 +20,15 @@ pub struct RuntimeConfig {
     /// into the same loud, controlled diagnostic. Generous for real recursion (this
     /// language's demos are shallow), safely under the native stack limit.
     pub max_depth: u64,
+    /// Feature E — the tolerance for `balanced(a)`: an apportionment is "balanced" iff
+    /// `max(slots) - min(slots) <= balance_tolerance`. `0` means "exactly equal"; a
+    /// genuinely uniform allotment claimed balanced yields zero discrepancies (E-2), while
+    /// a skew of any size fails it. Named here, never an inline magic constant (§12 G-5).
+    pub balance_tolerance: i64,
+    /// Feature E — an upper bound on an `apportionment[N]` size. A quota is fixed and small
+    /// by nature (Appendix I.8); this valve turns a pathological `apportionment[10^9]` into
+    /// a controlled `E-INDEX`-family diagnostic instead of an out-of-memory host abort.
+    pub max_apportionment: i64,
 }
 
 impl Default for RuntimeConfig {
@@ -29,6 +38,8 @@ impl Default for RuntimeConfig {
             upkeep_per_alloc: 1,
             max_steps: 10_000_000,
             max_depth: 512,
+            balance_tolerance: 0,
+            max_apportionment: 4096,
         }
     }
 }
