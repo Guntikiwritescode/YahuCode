@@ -647,35 +647,34 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
 }
 
 fn eval_binop(op: BinOp, lhs: &Expr, rhs: &Expr, st: &mut State) -> EvalResult {
-    // Short-circuiting boolean operators (also propagate `undisclosed` contagion).
-    match op {
-        BinOp::And => {
-            let l = eval(lhs, st)?;
-            return match l {
+    // The boolean operators short-circuit (and propagate `undisclosed` contagion), so
+    // they are handled before the strict eval-both path. Explicit `if` guards rather
+    // than a wildcard match arm, so adding a BinOp variant can never silently skip this.
+    if op == BinOp::And {
+        let l = eval(lhs, st)?;
+        return match l {
+            Val::Undisclosed => Ok(Val::Undisclosed),
+            Val::Bool(false) => Ok(Val::Bool(false)),
+            Val::Bool(true) => match eval(rhs, st)? {
                 Val::Undisclosed => Ok(Val::Undisclosed),
-                Val::Bool(false) => Ok(Val::Bool(false)),
-                Val::Bool(true) => match eval(rhs, st)? {
-                    Val::Undisclosed => Ok(Val::Undisclosed),
-                    Val::Bool(b) => Ok(Val::Bool(b)),
-                    other => type_err("&&", &other),
-                },
+                Val::Bool(b) => Ok(Val::Bool(b)),
                 other => type_err("&&", &other),
-            };
-        }
-        BinOp::Or => {
-            let l = eval(lhs, st)?;
-            return match l {
+            },
+            other => type_err("&&", &other),
+        };
+    }
+    if op == BinOp::Or {
+        let l = eval(lhs, st)?;
+        return match l {
+            Val::Undisclosed => Ok(Val::Undisclosed),
+            Val::Bool(true) => Ok(Val::Bool(true)),
+            Val::Bool(false) => match eval(rhs, st)? {
                 Val::Undisclosed => Ok(Val::Undisclosed),
-                Val::Bool(true) => Ok(Val::Bool(true)),
-                Val::Bool(false) => match eval(rhs, st)? {
-                    Val::Undisclosed => Ok(Val::Undisclosed),
-                    Val::Bool(b) => Ok(Val::Bool(b)),
-                    other => type_err("||", &other),
-                },
+                Val::Bool(b) => Ok(Val::Bool(b)),
                 other => type_err("||", &other),
-            };
-        }
-        _ => {}
+            },
+            other => type_err("||", &other),
+        };
     }
 
     let l = eval(lhs, st)?;
