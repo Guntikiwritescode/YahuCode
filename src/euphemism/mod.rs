@@ -177,6 +177,31 @@ pub fn category_of(entity: &str) -> &'static str {
     "A"
 }
 
+// ─────────── Registry case descriptors (#Feature G — the dual legal system) ───────────
+
+/// Candid descriptors for Registry cases (Feature G, §9.4): a **case id → its exposed
+/// candid label**. This is the sanctioned place the nationality shows up — as *stored,
+/// exposed reality* on the ACTUAL face and the framing note, the axis of the documented
+/// discrimination the satire condemns. It is **never** the operative key the map routes on
+/// (the key stays a case/apparatus object, G-K1). Keying the map itself on ethnicity is the
+/// forbidden alternative (Appendix I.4); a lookup table of candid *labels* is not that.
+///
+/// Unknown cases have no descriptor (`None`) — the Registry stays a reusable primitive
+/// (permits, budgets, benefits), not hard-wired to this one scenario.
+pub const CASE_DESCRIPTORS: &[(&str, &str)] = &[
+    ("case_A", "a Palestinian resident of the occupied territory"),
+    ("case_B", "an Israeli settler in the same territory"),
+    ("inquiry_A", "an inquiry into the state's own conduct"),
+];
+
+/// The candid descriptor for a Registry case id, if one is on record (§9.4).
+pub fn case_descriptor(case: &str) -> Option<&'static str> {
+    CASE_DESCRIPTORS
+        .iter()
+        .find(|(k, _)| *k == case)
+        .map(|(_, v)| *v)
+}
+
 /// The ACTUAL access description for a category.
 pub fn diff_description(category: &str) -> &'static str {
     for (k, v) in DIFF_TABLE {

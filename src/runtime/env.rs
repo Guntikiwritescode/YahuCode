@@ -48,6 +48,18 @@ impl Env {
         self.globals.insert(name.to_string(), val);
     }
 
+    /// Read a variable mutably: the current call frame (if any) first, then globals.
+    /// Used by the collection ops to mutate a container in place (a `push`/`allocate`/
+    /// `classify` writes the single backing store — no clone-and-reinsert churn).
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Val> {
+        if let Some(frame) = self.frames.last_mut() {
+            if frame.contains_key(name) {
+                return frame.get_mut(name);
+            }
+        }
+        self.globals.get_mut(name)
+    }
+
     /// Enter a new function-call frame.
     pub fn push_frame(&mut self) {
         self.frames.push(HashMap::new());

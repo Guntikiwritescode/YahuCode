@@ -1,0 +1,11 @@
+@operation("Iron Equity")
+# Feature E — Apportionment: the budget, apportioned with perfect equality
+# across the territory. OFFICIAL proclaims equal shares; ACTUAL is 94/1/1/1/1/1.
+let budget = apportionment[6];
+allocate(budget, 0, 940);   # District A (the settlements)
+allocate(budget, 1, 12);
+allocate(budget, 2, 8);
+allocate(budget, 3, 11);
+allocate(budget, 4, 9);
+allocate(budget, 5, 10);
+declare(balanced(budget));

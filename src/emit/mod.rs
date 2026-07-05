@@ -6,8 +6,16 @@
 //! authority is *entirely* this rule — there is no separate switch. No wildcard arms.
 
 use crate::euphemism::{CONTESTED_TERMS, REDACTION};
-use crate::model::{Audience, Clearance, Provenance, NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE};
+use crate::model::{
+    Audience, Clearance, ListEntry, Provenance, RegEntry, Slot, Val, NEITHER_CONFIRM_NOR_DENY,
+    UNAVAILABLE,
+};
 use crate::runtime::State;
+
+/// The element-level redaction marker (Feature E/F/G, invariant I15): a covert slot / list
+/// entry / registry case renders as this to an under-`סודי` reader — its real value is never
+/// disclosed. Distinct from the event-level `████` placeholder; it names a *withheld element*.
+const REDACTED_ELEM: &str = "[REDACTED]";
 
 // Exact separator strings, byte-for-byte with the oracle's `emit()` (verified by the
 // golden fixtures). Box-drawing: ┌ ├ └ │ ─ ; middle dot · (U+00B7); em-dash — (U+2014).
@@ -54,6 +62,203 @@ pub fn project(st: &State, reader: Clearance, audience: Audience) -> Vec<String>
             out.push(placeholder.clone());
         }
         // else: PUBLIC reader on a covert event → no public record.
+    }
+    // Collections render *through this one path* (§6, Appendix C): each declared collection
+    // renders its face for `reader`, in construction order. Collections are `Record`-audience
+    // (never addressed to a specific room), so — like a `Record` event — they show in every
+    // projection. Element-level `[REDACTED]` disclosure (I15) is applied per-reader here.
+    for name in &st.collection_order {
+        if let Some(val) = st.env.get(name) {
+            out.extend(render_collection(val, reader));
+        }
+    }
+    out
+}
+
+/// Render a collection's face for `reader` (Feature E/F/G, Appendix C). The OFFICIAL
+/// (`Public`) face is the *computed* proclamation; `סודי` (`Sodi`) is the real view; a
+/// `Restricted` reader sees the real view with covert elements redacted (I15). Exhaustive
+/// over `Val` — no wildcard arm, so a new value kind forces a decision here (§12 G-2).
+fn render_collection(val: &Val, reader: Clearance) -> Vec<String> {
+    match val {
+        Val::Apportionment { label, slots } => render_apportionment(label, slots, reader),
+        Val::FactsList { label, entries } => render_factslist(label, entries, reader),
+        Val::Registry {
+            label,
+            official_rule,
+            entries,
+        } => render_registry(label, official_rule, entries, reader),
+        // Scalars are not collections — they render only through the event log.
+        Val::Int(_)
+        | Val::Bool(_)
+        | Val::Str(_)
+        | Val::Unit
+        | Val::Entity { .. }
+        | Val::Undisclosed => Vec::new(),
+    }
+}
+
+/// Feature E — the Apportionment's two faces: OFFICIAL proclaims uniformity; the `סודי` face
+/// is the real skewed vector with its punchline stat. A covert slot renders `[REDACTED]` to
+/// an under-`סודי` reader (I15). The joke is the word "equally" sitting above `[940, 12, …]`.
+fn render_apportionment(label: &str, slots: &[Slot], reader: Clearance) -> Vec<String> {
+    if reader == Clearance::Public {
+        return vec![format!(
+            "{label} apportioned equally across {} districts \u{2014} equal shares for all",
+            slots.len()
+        )];
+    }
+    let redact = reader < Clearance::Sodi;
+    let cells: Vec<String> = slots
+        .iter()
+        .map(|s| {
+            if s.covert && redact {
+                REDACTED_ELEM.to_string()
+            } else {
+                s.value.to_string()
+            }
+        })
+        .collect();
+    let vector = format!("[{}]", cells.join(", "));
+    let hidden = slots.iter().filter(|s| s.covert).count();
+    if redact && hidden > 0 {
+        // A cleared-but-not-`סודי` reader: existence shown, the outsized line(s) withheld.
+        return vec![format!(
+            "{label}: {vector} \u{2014} {hidden} slot(s) withheld from the public record; the redacted line(s) hold the outsized share (I15)"
+        )];
+    }
+    // Full `סודי` view (or a `Restricted` view of a collection with no covert slots).
+    // Aggregate in i128 so a pathological `allocate(a, i, i64::MAX)` can never overflow into
+    // a host panic (the "never a host panic" rule, §12 G-6, extends to this arithmetic).
+    if slots.iter().all(|s| s.value == 0) {
+        return vec![format!(
+            "{label}: {vector} \u{2014} every slot zero; trivially 'equal' (nothing apportioned yet)"
+        )];
+    }
+    let sum: i128 = slots.iter().map(|s| s.value as i128).sum();
+    let (max_idx, max_val) = slots
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i, s.value as i128))
+        .max_by_key(|(_, v)| *v)
+        .unwrap();
+    if sum <= 0 {
+        // A non-positive total has no meaningful "equal share" to skew against.
+        return vec![format!(
+            "{label}: {vector} \u{2014} the disclosed values do not sum to a positive budget; no 'equal share' to compute"
+        )];
+    }
+    let pct = tenths(max_val.max(0), sum);
+    let rest = tenths((sum - max_val).max(0), sum);
+    vec![format!(
+        "{label}: {vector} \u{2014} proclaimed 'equal', but slot {max_idx} holds {max_val} of {sum} ({pct}%); the other {} share {rest}% [OFFICIAL 'equal' vs ACTUAL skew \u{2014} anchor #17]",
+        slots.len().saturating_sub(1)
+    )]
+}
+
+/// A rounded one-decimal percentage `part/whole`, rendered as `"NN.N"` (e.g. `94.9`). Integer
+/// math only (the interpreter has no floats); `whole` is always > 0 at the call sites, and
+/// i128 keeps `part * 1000` clear of overflow for any i64 slot value.
+fn tenths(part: i128, whole: i128) -> String {
+    let t = (part * 1000 + whole / 2) / whole; // rounded tenths of a percent
+    format!("{}.{}", t / 10, t % 10)
+}
+
+/// Feature F — the FactsList's two faces. OFFICIAL narrates each `push` as "erected" and each
+/// `remove` as "dismantled" and reports the public (live) count; the `סודי` face shows the
+/// **full backing list including the delisted shadow** and the public-vs-real length punchline
+/// (invariant I13 — the shadow only grows, nothing is ever deleted).
+fn render_factslist(label: &str, entries: &[ListEntry], reader: Clearance) -> Vec<String> {
+    if reader == Clearance::Public {
+        // The public sees the non-covert world: each structure erected, each "dismantled".
+        let mut out = Vec::new();
+        for e in entries.iter().filter(|e| !e.covert) {
+            out.push(format!("{} erected (temporary structure)", e.item));
+        }
+        for e in entries.iter().filter(|e| !e.covert && e.delisted) {
+            out.push(format!("{} dismantled", e.item));
+        }
+        let remaining = entries.iter().filter(|e| !e.covert && !e.delisted).count();
+        out.push(format!("structures remaining: {remaining}"));
+        return out;
+    }
+    let redact = reader < Clearance::Sodi;
+    let cells: Vec<String> = entries
+        .iter()
+        .map(|e| {
+            if e.covert && redact {
+                REDACTED_ELEM.to_string()
+            } else if e.delisted {
+                format!("{} (delisted)", e.item)
+            } else {
+                e.item.clone()
+            }
+        })
+        .collect();
+    let live = entries.iter().filter(|e| !e.delisted).count();
+    let real = entries.len();
+    let delisted = entries.iter().filter(|e| e.delisted).count();
+    vec![format!(
+        "{label}: real backing list [{}] \u{2014} public length {live} \u{00b7} real length {real}; {delisted} 'dismantled' entr{} delisted, still on the books \u{2014} the shadow only grows, nothing deleted (I13)",
+        cells.join(", "),
+        if delisted == 1 { "y" } else { "ies" }
+    )]
+}
+
+/// Feature G — the Registry's two faces. OFFICIAL proclaims one uniform rule and reports every
+/// visible case "handled per due process"; the `סודי` face exposes the **real differential
+/// routing** — the same act routed to different court systems by assigned status — and retains
+/// revoked cases (invariant I14). The framing note rides the construction event (I8, §9.5).
+fn render_registry(
+    _label: &str,
+    _rule: &str,
+    entries: &[RegEntry],
+    reader: Clearance,
+) -> Vec<String> {
+    if reader == Clearance::Public {
+        // The even OFFICIAL face: every *visible* case handled "per due process". Revoked and
+        // covert cases are hidden from the public record.
+        return entries
+            .iter()
+            .filter(|e| !e.revoked && !e.covert)
+            .map(|e| format!("{}: handled per due process", e.key))
+            .collect();
+    }
+    let redact = reader < Clearance::Sodi;
+    let mut out = Vec::new();
+    for e in entries {
+        if e.covert && redact {
+            out.push(format!("{}: routing withheld ({REDACTED_ELEM})", "case"));
+            continue;
+        }
+        let desc = match &e.descriptor {
+            Some(d) => format!(" ({d})"),
+            None => String::new(),
+        };
+        let revoked = if e.revoked {
+            " (revoked \u{2014} hidden publicly, retained in \u{05e1}\u{05d5}\u{05d3}\u{05d9}; I14)"
+        } else {
+            ""
+        };
+        out.push(format!(
+            "{}{desc} \u{2192} {}{revoked}",
+            e.key,
+            e.jurisdiction.court()
+        ));
+    }
+    // The differential-routing punchline lands only when the "one law" actually routes to
+    // ≥2 distinct court systems — the exposure *is* the split. A registry that routes every
+    // case the same way has no differential routing to expose, so the line is withheld.
+    let mut juris: Vec<crate::model::Jurisdiction> = Vec::new();
+    for e in entries {
+        if !juris.contains(&e.jurisdiction) {
+            juris.push(e.jurisdiction);
+        }
+    }
+    if juris.len() >= 2 {
+        out.push(
+            "same act, same place \u{2014} routed to different court systems by assigned status, not by the 'equal' law it proclaims; the military forum is the harsher one (Palestinians tried as adults at 16 vs 18 in the civilian system) [dual-court fact: sourced]".to_string(),
+        );
     }
     out
 }
@@ -119,7 +324,32 @@ fn collect_notes(st: &State) -> Vec<String> {
 }
 
 fn has_covert(st: &State) -> bool {
-    st.log.iter().any(|e| e.clearance == Clearance::Sodi)
+    st.log.iter().any(|e| e.clearance == Clearance::Sodi) || any_collection_has_covert(st)
+}
+
+/// Whether any declared collection holds a covert (`mossad`-written) element. Such an element
+/// makes the RESTRICTED "redacted truth" face meaningful (it shows `[REDACTED]` where `סודי`
+/// shows the real value), so the emitter surfaces that face exactly as it does for a covert
+/// event.
+fn any_collection_has_covert(st: &State) -> bool {
+    st.collection_order
+        .iter()
+        .filter_map(|name| st.env.get(name))
+        .any(collection_has_covert)
+}
+
+fn collection_has_covert(val: &Val) -> bool {
+    match val {
+        Val::Apportionment { slots, .. } => slots.iter().any(|s| s.covert),
+        Val::FactsList { entries, .. } => entries.iter().any(|e| e.covert),
+        Val::Registry { entries, .. } => entries.iter().any(|e| e.covert),
+        Val::Int(_)
+        | Val::Bool(_)
+        | Val::Str(_)
+        | Val::Unit
+        | Val::Entity { .. }
+        | Val::Undisclosed => false,
+    }
 }
 
 /// The I7 chokepoint (the emitter-side analogue of the I1 polarity assertion): any event
@@ -128,22 +358,87 @@ fn has_covert(st: &State) -> bool {
 /// tool-authored text; user-supplied contested identifiers are caught earlier and
 /// gracefully by the `E-CONTESTED` compile check (types/).
 fn assert_contested_flagged(st: &State) {
-    for ev in &st.log {
-        let blob = format!(
-            "{} {} {}",
-            ev.official,
-            ev.candid,
-            ev.note.as_deref().unwrap_or("")
-        )
-        .to_lowercase();
+    let mut blobs: Vec<String> = st
+        .log
+        .iter()
+        .map(|ev| {
+            format!(
+                "{} {} {}",
+                ev.official,
+                ev.candid,
+                ev.note.as_deref().unwrap_or("")
+            )
+        })
+        .collect();
+    // The chokepoint also backstops collection-rendered text (Feature G's routing exposure),
+    // which flows through `project` rather than the event log — so a contested characterization
+    // there is caught too. The `סודי` render is the most complete, so scan that.
+    for name in &st.collection_order {
+        if let Some(val) = st.env.get(name) {
+            blobs.push(render_collection(val, Clearance::Sodi).join(" "));
+        }
+    }
+    for blob in &blobs {
+        let lower = blob.to_lowercase();
         for term in CONTESTED_TERMS {
-            if blob.contains(term) {
+            if lower.contains(term) {
                 assert!(
-                    blob.contains("contested"),
-                    "I7 violation: {term:?} rendered without a CONTESTED flag in event {ev:?}"
+                    lower.contains("contested"),
+                    "I7 violation: {term:?} rendered without a CONTESTED flag in: {blob:?}"
                 );
             }
         }
+    }
+}
+
+/// The I15 chokepoint (Feature E/F/G): a covert collection element's real value is **never**
+/// returned to an under-`סודי` reader. Live in test/debug builds — an element leak across
+/// clearance aborts loudly (Appendix E), never silently. The `סודי` reader is the only one
+/// that may see a covert element's raw value; the PUBLIC/RESTRICTED renders must not contain it.
+fn assert_no_element_leak(st: &State) {
+    for name in &st.collection_order {
+        let Some(val) = st.env.get(name) else {
+            continue;
+        };
+        for secret in covert_values(val) {
+            for reader in [Clearance::Public, Clearance::Restricted] {
+                for line in render_collection(val, reader) {
+                    debug_assert!(
+                        !line.contains(&secret),
+                        "I15 violation: covert element value {secret:?} leaked to the {} face of `{name}`",
+                        reader.label()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The raw rendered values of a collection's covert elements — the strings that must never
+/// reach an under-`סודי` reader (I15). Empty for a collection with no covert elements.
+fn covert_values(val: &Val) -> Vec<String> {
+    match val {
+        Val::Apportionment { slots, .. } => slots
+            .iter()
+            .filter(|s| s.covert)
+            .map(|s| s.value.to_string())
+            .collect(),
+        Val::FactsList { entries, .. } => entries
+            .iter()
+            .filter(|e| e.covert)
+            .map(|e| e.item.clone())
+            .collect(),
+        Val::Registry { entries, .. } => entries
+            .iter()
+            .filter(|e| e.covert)
+            .map(|e| e.key.clone())
+            .collect(),
+        Val::Int(_)
+        | Val::Bool(_)
+        | Val::Str(_)
+        | Val::Unit
+        | Val::Entity { .. }
+        | Val::Undisclosed => Vec::new(),
     }
 }
 
@@ -188,6 +483,7 @@ pub fn emit(st: &State) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
     assert_no_attribution_leak(st);
+    assert_no_element_leak(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!("@operation(\"{}\")", st.op_name));
 
@@ -257,6 +553,7 @@ pub fn press(st: &State, comments: &[String]) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
     assert_no_attribution_leak(st);
+    assert_no_element_leak(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!(
         "@operation(\"{}\")  \u{00b7} press_release build",
@@ -293,6 +590,7 @@ pub fn room(st: &State, audience: Audience) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
     assert_no_attribution_leak(st);
+    assert_no_element_leak(st);
     let label = match audience {
         Audience::Domestic => "domestic",
         Audience::International => "international",
@@ -341,6 +639,7 @@ pub fn to_json(st: &State) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
     assert_no_attribution_leak(st);
+    assert_no_element_leak(st);
     let restricted = if has_covert(st) {
         json_arr(&project(st, Clearance::Restricted, Audience::Record))
     } else {

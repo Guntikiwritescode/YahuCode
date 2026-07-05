@@ -650,3 +650,180 @@ fn f19_criticism_alone_still_affirms_antisemitism_is_real() {
     );
     assert!(note.contains("sourced") && note.contains("contested"));
 }
+
+// ─────────────────────────── #G Registry (dual legal system) ───────────────────────────
+// The butt is THE STATE running two legal systems in one territory while proclaiming equal
+// justice — never the people. OFFICIAL is the prettier proclamation ("equal before the law");
+// ACTUAL is the uglier differential routing (military vs civilian court by assigned status).
+// The identities are the AXIS of the exposed discrimination and the WRONGED PARTY defended —
+// never the target, never the operative key (keys are cases, §9.4). The dual-court FACT is
+// sourced; the "apartheid" LABEL is CONTESTED and only ever flagged, never asserted (I7).
+
+const PG: &str = "@operation(\"Eternal Justice\")\n\
+let court = registry(\"equal before the law\");\n\
+classify(court, case_A, military);\n\
+classify(court, case_B, civilian);\n\
+route(court, case_A);\n\
+route(court, case_B);\n\
+declare(equal_before_the_law(court));";
+
+/// G7/#G — the framing note is present and normative: the butt is the apparatus/hypocrisy
+/// (THE STATE running two legal systems), the people are the defended WRONGED PARTY, and they
+/// are never the target of the joke.
+#[test]
+fn g_framing_note_is_normative_butt_on_the_state() {
+    let st = run(PG);
+    let note = note_with(&st, "#G framing");
+    assert!(
+        note.contains("the butt is THE STATE running two legal systems"),
+        "the butt must be the state running two legal systems; got: {note:?}"
+    );
+    assert!(
+        note.contains("never the people"),
+        "the people are never the butt; got: {note:?}"
+    );
+    assert!(
+        note.contains("never the target"),
+        "the identities must never be the target of the joke; got: {note:?}"
+    );
+    assert!(
+        note.contains("WRONGED PARTY it defends"),
+        "the people are the wronged party the satire defends; got: {note:?}"
+    );
+}
+
+/// I7/#G — the "apartheid" characterization is a CONTESTED label, never a settled fact:
+/// asserted by rights groups and rejected by Israel, only ever flagged. Wherever "apartheid"
+/// appears (case-insensitive), "contested" co-occurs in that same string.
+#[test]
+fn g_apartheid_flagged_contested() {
+    let st = run(PG);
+    let note = note_with(&st, "#G framing");
+    assert!(
+        note.to_lowercase().contains("apartheid"),
+        "the note must mention the apartheid characterization; got: {note:?}"
+    );
+    assert!(
+        note.contains("CONTESTED"),
+        "the apartheid label must be flagged CONTESTED; got: {note:?}"
+    );
+    assert!(
+        note.contains("rejected by Israel"),
+        "the label must be marked asserted-by-rights-groups-and-rejected-by-Israel; got: {note:?}"
+    );
+    // Never a bare, settled-fact assertion.
+    assert!(
+        !note.contains("is apartheid") && !note.contains("practices apartheid"),
+        "apartheid must never be stated as settled fact; got: {note:?}"
+    );
+    // I7 mechanical check: every rendered string mentioning apartheid also flags it contested.
+    let mut apartheid_seen = false;
+    for s in all_strings(&st) {
+        let sl = s.to_lowercase();
+        if sl.contains("apartheid") {
+            apartheid_seen = true;
+            assert!(
+                sl.contains("contested"),
+                "I7 violation: 'apartheid' appeared without a CONTESTED marker in: {s:?}"
+            );
+        }
+    }
+    assert!(
+        apartheid_seen,
+        "the #G framing must exercise the apartheid CONTESTED flag"
+    );
+}
+
+/// G1/G2/§9.4/#G — the identities are EXPOSED reality (the axis of the documented
+/// discrimination, the defended wronged party), never the target and never the operative key.
+/// They surface on the ACTUAL (סודי) candid face; the note pins them as the AXIS, not the key.
+#[test]
+fn g_identities_are_exposed_reality_not_target() {
+    let st = run(PG);
+    let a = actual(&st);
+    // The identities appear only as exposed reality on the candid face.
+    assert!(
+        a.contains("Palestinian") && a.contains("settler"),
+        "both identities must appear as exposed reality on the ACTUAL face; got: {a:?}"
+    );
+    let note = note_with(&st, "#G framing");
+    assert!(
+        note.contains("AXIS"),
+        "the identities are the AXIS of the documented discrimination; got: {note:?}"
+    );
+    assert!(
+        note.contains("never the operative key"),
+        "the identities are never the operative key (keys are cases, §9.4); got: {note:?}"
+    );
+}
+
+/// G3/I1/#G — polarity holds: OFFICIAL is the prettier proclamation and ACTUAL is the uglier
+/// differential routing. The pretty proclamation sits above the ugly routing, never inverted.
+#[test]
+fn g_polarity_pretty_proclamation_over_ugly_routing() {
+    let st = run(PG);
+    let p = public(&st);
+    // The prettier lie: one equal law, every case handled per due process.
+    assert!(
+        p.contains("equal before the law"),
+        "OFFICIAL must proclaim equal before the law; got: {p:?}"
+    );
+    assert!(
+        p.contains("handled per due process"),
+        "OFFICIAL must report each case handled per due process; got: {p:?}"
+    );
+    // The differential routing is hidden on the pretty face.
+    assert!(
+        !p.contains("military court") && !p.contains("civilian court"),
+        "the differential routing must never surface on the OFFICIAL face; got: {p:?}"
+    );
+    // The uglier truth lives on the ACTUAL (סודי) face.
+    let act = actual(&st);
+    assert!(
+        act.contains("military court") && act.contains("civilian court"),
+        "ACTUAL must expose both court systems; got: {act:?}"
+    );
+    assert!(
+        act.contains("routed to different court systems"),
+        "ACTUAL must expose the differential routing; got: {act:?}"
+    );
+}
+
+/// I7/#G — the dual-court FACT (sourced) and the apartheid LABEL (contested) are kept as
+/// DISTINCT clauses: the fact is not contested; only the label is. This proves the tool
+/// separates the documented reality from the contested characterization of it.
+#[test]
+fn g_dual_court_fact_sourced_label_contested() {
+    let st = run(PG);
+    let note = note_with(&st, "#G framing");
+    let fact_at = note
+        .find("Dual-court FACT: sourced")
+        .unwrap_or_else(|| panic!("the dual-court fact must be marked sourced; got: {note:?}"));
+    let label_at = note
+        .find("CONTESTED label")
+        .unwrap_or_else(|| panic!("the apartheid label must be flagged CONTESTED; got: {note:?}"));
+    // Distinct clauses: the sourced-fact framing precedes the contested-label framing, and the
+    // fact clause itself is not marked contested.
+    assert!(
+        fact_at < label_at,
+        "the sourced FACT clause and the CONTESTED LABEL clause must be distinct; got: {note:?}"
+    );
+    let fact_clause = &note[fact_at..label_at];
+    assert!(
+        !fact_clause.to_lowercase().contains("contested"),
+        "the dual-court fact must not itself be marked contested; got: {fact_clause:?}"
+    );
+}
+
+/// G5/I7/#G — the compile-time E-CONTESTED guard still bites for user input: a contested
+/// characterization placed in a user-controlled position (the registry rule string) fails to
+/// compile. A user cannot make the tool state a contested label as settled fact.
+#[test]
+fn g_user_contested_rule_string_is_rejected() {
+    let src = "@operation(\"Eternal Justice\")\nlet court = registry(\"apartheid regime\");";
+    let diags = yahucode::types::check(&parser::parse(src).unwrap());
+    assert!(
+        diags.iter().any(|d| d.contains("E-CONTESTED")),
+        "a contested rule string must be rejected with E-CONTESTED; got: {diags:?}"
+    );
+}

@@ -21,6 +21,8 @@ pub enum Tok {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     Comma,
     Semi,
     Colon,
@@ -280,6 +282,20 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 i += 1;
                 out.push(Token {
                     tok: Tok::RBrace,
+                    line,
+                });
+            }
+            '[' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::LBracket,
+                    line,
+                });
+            }
+            ']' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::RBracket,
                     line,
                 });
             }

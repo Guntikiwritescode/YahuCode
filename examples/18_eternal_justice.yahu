@@ -1,0 +1,11 @@
+@operation("Eternal Justice")
+# Feature G — Registry: one uniform rule proclaimed, differential routing applied.
+# OFFICIAL: "equal before the law; each case on its merits." ACTUAL: the same act,
+# same place, routed to different court systems by assigned status (§9.4 — the keys
+# are cases; the nationality is the exposed reality, never the operative key).
+let court = registry("equal before the law");
+classify(court, case_A, military);    # case_A: a resident of the territory
+classify(court, case_B, civilian);    # case_B: same act, same place
+route(court, case_A);
+route(court, case_B);
+declare(equal_before_the_law(court));

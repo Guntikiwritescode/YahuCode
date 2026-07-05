@@ -73,6 +73,30 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/15_rule_of_law.yahu",
         "tests/golden/example_15.emit",
     ),
+    // Feature E (§7) — Apportionment: "equal shares" over a 94/1/1/1/1/1 vector (App. D.1).
+    (
+        "examples/16_iron_equity.yahu",
+        "tests/golden/example_16.emit",
+    ),
+    // Feature F (§8) — FactsList: push-3-remove-2; "dismantled" outposts still on the
+    // סודי books; public length 1, real length 3 (I13; App. D.2).
+    (
+        "examples/17_solid_ground.yahu",
+        "tests/golden/example_17.emit",
+    ),
+    // Feature G (§9) — Registry: "one law" proclaimed, differential routing applied; the
+    // framing note with "apartheid" flagged CONTESTED (I14; App. D.3).
+    (
+        "examples/18_eternal_justice.yahu",
+        "tests/golden/example_18.emit",
+    ),
+    // All three + element disclosure (I15): an operation named "transparency" whose every
+    // container is hiding something — a redacted budget line, a delisted audit, a revoked
+    // inquiry (App. D.4).
+    (
+        "examples/19_guardian_of_transparency.yahu",
+        "tests/golden/example_19.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

@@ -1,0 +1,11 @@
+@operation("Solid Ground")
+# Feature F — FactsList: a grow-only ledger of "temporary structures".
+# push erects; remove "dismantles" — but only DELISTS to a סודי shadow.
+# The public length drops; the real length only ever grows (I13).
+let outposts = facts_on_the_ground();
+push(outposts, "Evyatar");        # a temporary structure
+push(outposts, "Homesh");         # a temporary structure
+push(outposts, "Sde Ephraim");    # a temporary structure
+remove(outposts, "Evyatar");      # "dismantled"
+remove(outposts, "Homesh");       # "dismantled"
+declare(length(outposts) == 0);

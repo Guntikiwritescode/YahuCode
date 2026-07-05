@@ -119,6 +119,61 @@ pub enum Truth {
     Undisclosed,
 }
 
+/// One slot of an `Apportionment` (Feature E): a real value plus a `covert` flag. A slot
+/// written inside a `mossad` scope is `covert` and renders `[REDACTED]` to under-cleared
+/// readers (invariant I15) — reusing the existing clearance model, not a second reader.
+/// Keeping value+flag in one struct makes them impossible to desync (the F-2 idiom).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slot {
+    pub value: i64,
+    pub covert: bool,
+}
+
+/// One entry in a `FactsList` (Feature F). `delisted` ⇒ hidden from the PUBLIC length but
+/// **retained** in the single backing store — `remove` flips this flag, it never pops
+/// (invariant I13). `covert` gates it to `סודי` readers (I15). There is exactly **one**
+/// backing `Vec<ListEntry>` per list, so the real length can never drop (§12 F-2/Appendix I.1).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListEntry {
+    pub item: String,
+    pub delisted: bool,
+    pub covert: bool,
+}
+
+/// The **closed** routing target of a `Registry` case (Feature G, §9.3). Matched
+/// exhaustively — adding a jurisdiction is a deliberate, compiler-enforced change (G-K5).
+/// It is a *court system*, never an identity label (guardrail G1, §9.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Jurisdiction {
+    Military,
+    Civilian,
+}
+
+impl Jurisdiction {
+    /// The candid label of the court system this case routes to.
+    pub fn court(self) -> &'static str {
+        match self {
+            Jurisdiction::Military => "military court",
+            Jurisdiction::Civilian => "civilian court",
+        }
+    }
+}
+
+/// One case entry in a `Registry` (Feature G). The `key` is a **case / permit / status —
+/// never a raw ethnic/national/religious identity label** (§9.4, G-K1): the nationality-
+/// based routing is the exposed, condemned reality carried by the `descriptor` and the
+/// framing note, not the operative key. `revoked` ⇒ hidden publicly but **retained** in
+/// `סודי` (invariant I14 — `revoke` flips this, it never erases). `covert` gates the case
+/// to `סודי` readers (I15).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegEntry {
+    pub key: String,
+    pub descriptor: Option<String>,
+    pub jurisdiction: Jurisdiction,
+    pub revoked: bool,
+    pub covert: bool,
+}
+
 /// A runtime value on the ACTUAL tape — the real, deterministic, Turing-complete
 /// machine's payload (handoff §7.2). Closed set; the evaluator matches all of it.
 #[derive(Clone, Debug, PartialEq)]
@@ -137,6 +192,33 @@ pub enum Val {
     /// The third truth value as a value (handoff §7.6): `neither_confirm_nor_deny`.
     /// Produced only inside `mossad`; contagious within that scope.
     Undisclosed,
+
+    /// Feature E — **Apportionment** (array): a fixed-size allotment. OFFICIAL proclaims
+    /// "equal shares"; the ACTUAL vector (`slots`) is the real skew. `label` is the binding
+    /// name, used in the render. Reuses `Entity`'s tagged-reality convention at aggregate
+    /// scale (§5.4). The size is fixed at construction (no dynamic resize — Appendix I.8).
+    Apportionment {
+        label: String,
+        slots: Vec<Slot>,
+    },
+
+    /// Feature F — **FactsList** (list): a grow-only ledger. `push` appends live; `remove`
+    /// **delists** (flips a flag), never deletes — the public length may drop, the real
+    /// length (`entries.len()`) only ever grows (invariant I13). One backing store.
+    FactsList {
+        label: String,
+        entries: Vec<ListEntry>,
+    },
+
+    /// Feature G — **Registry** (map): a classification registry. OFFICIAL proclaims one
+    /// uniform rule (`official_rule`); the ACTUAL routes each case to a different court
+    /// system. `revoke` hides a case publicly but retains it (invariant I14). Keys are
+    /// cases/statuses, never identities (§9.4).
+    Registry {
+        label: String,
+        official_rule: String,
+        entries: Vec<RegEntry>,
+    },
 }
 
 impl Val {
@@ -157,10 +239,14 @@ impl Val {
             Val::Unit => Truth::False,
             Val::Entity { .. } => Truth::True,
             Val::Undisclosed => Truth::Undisclosed,
+            // A collection is a present thing (like `Entity`) — truthy.
+            Val::Apportionment { .. } | Val::FactsList { .. } | Val::Registry { .. } => Truth::True,
         }
     }
 
-    /// Render the candid (ACTUAL-face) form of a value.
+    /// Render the candid (ACTUAL-face) form of a value. For collections this is the real,
+    /// insider view (the `סודי` face); element-level `[REDACTED]` disclosure is applied
+    /// per-reader in `emit::project`, not here (invariant I15 is enforced at the read path).
     pub fn render(&self) -> String {
         match self {
             Val::Int(n) => n.to_string(),
@@ -169,6 +255,33 @@ impl Val {
             Val::Unit => "unit".to_string(),
             Val::Entity { name, .. } => name.clone(),
             Val::Undisclosed => "undisclosed".to_string(),
+            Val::Apportionment { slots, .. } => {
+                let cells: Vec<String> = slots.iter().map(|s| s.value.to_string()).collect();
+                format!("[{}]", cells.join(", "))
+            }
+            Val::FactsList { entries, .. } => {
+                let cells: Vec<String> = entries
+                    .iter()
+                    .map(|e| {
+                        if e.delisted {
+                            format!("{} (delisted)", e.item)
+                        } else {
+                            e.item.clone()
+                        }
+                    })
+                    .collect();
+                format!("[{}]", cells.join(", "))
+            }
+            Val::Registry { entries, .. } => {
+                let cells: Vec<String> = entries
+                    .iter()
+                    .map(|e| {
+                        let tag = if e.revoked { " (revoked)" } else { "" };
+                        format!("{}\u{2192}{}{tag}", e.key, e.jurisdiction.court())
+                    })
+                    .collect();
+                format!("[{}]", cells.join(", "))
+            }
         }
     }
 }

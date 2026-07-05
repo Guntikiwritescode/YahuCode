@@ -335,6 +335,95 @@ A no-op address: a speech is delivered and nothing changes.
 
 ---
 
+## Collections: truth accretes, it is never deleted
+
+Three collection types — an array, a list, and a map — share one philosophy: in
+ACTUAL the real contents only ever **accrete**, and a covert or out-of-world observer
+can always reconstruct them. The list never deletes (I13), the registry never erases
+(I14), and any element withheld from the public record stays readable to the cleared
+(I15). Each has an OFFICIAL face that proclaims fairness and a `סודי` face that shows
+the skew — the collection *is* the diff, in miniature.
+
+### Apportionment (array) — Feature E
+
+A fixed-size allotment. OFFICIAL proclaims it was "apportioned equally"; the `סודי`
+face shows the real, skewed vector and the punchline stat.
+
+```
+let a = apportionment[N];   // a fixed-size allotment of N slots
+allocate(a, i, v);          // write value v into slot i
+index(a, i)                 // read slot i
+balanced(a)                 // predicate — usable in declare(...)
+```
+
+An out-of-range index does **not** panic the host; it raises a controlled `E-INDEX`
+diagnostic. A slot written inside a `mossad { ... }` scope is covert: it renders
+`[REDACTED]` to under-cleared readers and only the candid figure at `סודי` (I15).
+
+| OFFICIAL | ACTUAL (`סודי`) |
+| --- | --- |
+| `budget apportioned equally across 6 districts — equal shares for all` | `budget: [940, 12, 8, 11, 9, 10] — proclaimed 'equal', but slot 0 holds 940 of 990 (94.9%); the other 5 share 5.1%` |
+
+`balanced(budget)` used as a `declare(...)` claim logs a discrepancy against the
+skewed reality, exactly like any other lie.
+
+### FactsList (list) — Feature F
+
+A grow-only ledger. `push` erects a "temporary structure"; `remove` does **not**
+delete it.
+
+```
+let l = facts_on_the_ground();   // a grow-only ledger
+push(l, x);                      // erect a "temporary structure"
+remove(l, x);                    // DELIST x to a סודי shadow — it is not deleted (I13)
+length(l)                        // the PUBLIC (live) length
+```
+
+`remove` delists an entry to a `סודי` shadow rather than erasing it: the real backing
+length only ever grows (invariant I13). `length(l)` reports the **public** (live)
+count; the `סודי` face shows the full backing list — delisted entries included — and
+the gap between the public and real lengths. There is **deliberately no** `purge` or
+`hard_delete` operation: its absence is the feature. Nothing is ever removed from the
+record; it is only taken off the public list.
+
+### Registry (map) — Feature G
+
+One proclaimed rule, differential routing underneath. This is a sensitive feature: it
+renders a normative `framing` note (I8), and the word "apartheid" is flagged
+**CONTESTED** (I7).
+
+```
+let r = registry("equal before the law");   // proclaim one uniform rule
+classify(r, case, military);                 // assign a case to a court (military | civilian)
+route(r, case)                               // look up a case's routing
+revoke(r, case);                             // hide a case publicly, RETAIN it in סודי (I14)
+equal_before_the_law(r)                      // predicate — usable in declare(...)
+```
+
+The key is always a **case**, never an identity label (§9.4). OFFICIAL proclaims every
+case is "handled per due process"; the `סודי` face exposes that the same act in the
+same place is routed to different court systems by assigned status. `revoke` hides a
+case from the public record but retains it in `סודי` (invariant I14) — like the list,
+the registry never erases.
+
+The framing note keeps the butt on **the state running two legal systems while
+proclaiming equal justice** — never on the people. The identities are the axis of the
+documented discrimination the satire exposes and the wronged party it defends, never
+the target of the joke and never the operative key. The dual-court fact is sourced;
+"apartheid" as a characterization of it is contested and is flagged, never stated as
+settled fact. See `docs/sources.md` anchor 17.
+
+### The example programs
+
+- `examples/16_iron_equity.yahu` — Apportionment (E).
+- `examples/17_solid_ground.yahu` — FactsList (F).
+- `examples/18_eternal_justice.yahu` — Registry (G).
+- `examples/19_guardian_of_transparency.yahu` — all three at once, plus element-level
+  disclosure: an under-cleared reader sees `[REDACTED]` slots and public lengths while
+  the `סודי` reader reconstructs the full contents (I15).
+
+---
+
 ## Comments and the `--press` build
 
 `# …` line comments are stripped from the token stream during parsing and collected
