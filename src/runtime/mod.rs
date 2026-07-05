@@ -50,7 +50,10 @@ pub struct State {
     pub log: Vec<Event>,
     /// DISCREPANCY ledger — append-only, read-never-by-default.
     pub discrepancies: Vec<Discrepancy>,
-    /// Coalition core support (Phase 3 charges upkeep against it).
+    /// Live coalition allocations `(name, what)`. Never freed (memory → coalition);
+    /// each one costs upkeep per turn.
+    pub allocations: Vec<(String, String)>,
+    /// Coalition core support; upkeep is charged against it each turn.
     pub core: i64,
     /// The only in-world terminal outcome (invariant I6).
     pub ended_by_elections: bool,
@@ -73,6 +76,7 @@ impl State {
             funcs: HashMap::new(),
             log: Vec::new(),
             discrepancies: Vec::new(),
+            allocations: Vec::new(),
             core: config.core_start,
             ended_by_elections: false,
             runtime_error: None,
@@ -209,7 +213,76 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             action(verb, target, *self_defense, st);
             Ok(Flow::Next)
         }
+
+        Stmt::Allocate { name, what } => {
+            st.allocations.push((name.clone(), what.clone()));
+            st.log.push(Event::public(
+                format!("established: {name}"),
+                format!("allocated {name} ({what}) \u{2014} costs coalition each turn"),
+            ));
+            Ok(Flow::Next)
+        }
+
+        Stmt::Bribe { name, amount } => {
+            let amt = match eval(amount, st)? {
+                Val::Int(n) => n,
+                other => {
+                    return Err(EvalError(format!(
+                        "bribe amount must be an integer, got {}",
+                        other.render()
+                    )))
+                }
+            };
+            st.core += amt;
+            st.log.push(Event::public(
+                format!("coalition partner accommodated (+{amt})"),
+                format!("bribe({name}, {amt}) \u{2192} core={}", st.core),
+            ));
+            Ok(Flow::Next)
+        }
+
+        Stmt::Postpone => {
+            // A turn passes; upkeep is projected before it is charged (matching the
+            // oracle's rendering) and then `tick` charges it.
+            let projected = st.core - st.config.upkeep_per_alloc * st.allocations.len() as i64;
+            st.log.push(Event::public(
+                "matter deferred",
+                format!("postpone() \u{2014} a turn passes (core={projected} after upkeep)"),
+            ));
+            tick(st);
+            Ok(Flow::Next)
+        }
+
+        Stmt::Elections => {
+            fall(
+                st,
+                "government dissolves itself \u{2192} early elections called (the only halt).",
+            );
+            Ok(Flow::Next)
+        }
     }
+}
+
+/// Charge coalition upkeep for the turn and, if support is exhausted, tip into
+/// `elections` — the only in-world halt (invariant I6). Charged per `postpone` in v1.
+fn tick(st: &mut State) {
+    if !st.allocations.is_empty() {
+        st.core -= st.config.upkeep_per_alloc * st.allocations.len() as i64;
+    }
+    st.turn += 1;
+    if st.core <= 0 && !st.ended_by_elections {
+        fall(
+            st,
+            "coalition support exhausted \u{2192} the government falls (the only halt).",
+        );
+    }
+}
+
+/// The government falls — set the terminal flag and record it on both tapes.
+fn fall(st: &mut State, candid: &str) {
+    st.ended_by_elections = true;
+    st.log
+        .push(Event::public("\u{2014} early elections \u{2014}", candid));
 }
 
 /// `declare` / `assert` — writes OFFICIAL, logs a discrepancy iff the claim is really

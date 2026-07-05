@@ -157,6 +157,21 @@ pub enum Stmt {
         target: String,
         self_defense: bool,
     },
+
+    /// `let name = allocate(what);` — a coalition allocation. It costs coalition support
+    /// each turn (charged on `postpone`); it is never freed (memory → coalition, §7.5).
+    Allocate { name: String, what: String },
+
+    /// `bribe(name, amount);` — top up coalition core support.
+    Bribe { name: String, amount: Expr },
+
+    /// `postpone();` — the most-called stdlib function: a turn-consuming no-op that
+    /// charges upkeep for every live allocation (§7.5).
+    Postpone,
+
+    /// `elections;` — the only explicit in-world halt (invariant I6). The government
+    /// dissolves; nothing after it runs.
+    Elections,
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,

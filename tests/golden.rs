@@ -24,6 +24,10 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/03_rising_lion.yahu",
         "tests/golden/example_03.emit",
     ),
+    (
+        "examples/06_guardian_of_the_walls.yahu",
+        "tests/golden/example_06.emit",
+    ),
 ];
 
 fn assert_emit_golden(src_path: &str, golden_path: &str) {

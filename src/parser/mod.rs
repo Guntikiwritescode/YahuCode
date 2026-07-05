@@ -132,6 +132,10 @@ impl Parser {
                 "return" => self.return_stmt(),
                 "declare" | "assert" => self.declare(),
                 "hasbara" => self.hasbara(),
+                "let" => self.allocate(),
+                "bribe" => self.bribe(),
+                "postpone" => self.postpone(),
+                "elections" => self.elections(),
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -275,6 +279,50 @@ impl Parser {
         self.eat(&Tok::RParen)?;
         self.eat(&Tok::Semi)?;
         Ok(Stmt::Declare(e))
+    }
+
+    /// `let name = allocate(what);` — a coalition allocation.
+    fn allocate(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'let'
+        let name = self.eat_ident()?;
+        self.eat(&Tok::Eq)?;
+        let alloc = self.eat_ident()?;
+        if alloc != "allocate" {
+            return self.err("`let` bindings must be `allocate(...)`");
+        }
+        self.eat(&Tok::LParen)?;
+        let what = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Allocate { name, what })
+    }
+
+    /// `bribe(name, amount);`
+    fn bribe(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'bribe'
+        self.eat(&Tok::LParen)?;
+        let name = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let amount = self.expr()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Bribe { name, amount })
+    }
+
+    /// `postpone();`
+    fn postpone(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'postpone'
+        self.eat(&Tok::LParen)?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Postpone)
+    }
+
+    /// `elections;`
+    fn elections(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'elections'
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Elections)
     }
 
     fn hasbara(&mut self) -> Result<Stmt, ParseError> {

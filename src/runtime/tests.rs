@@ -115,6 +115,65 @@ fn casts_and_read_are_value_identity_at_runtime() {
     assert_eq!(st.env.get("b"), Some(&Val::Int(8)));
 }
 
+// ─────────── Phase 3: coalition, elections, no-halt ───────────
+
+#[test]
+fn coalition_exhaustion_causes_elections_and_stops_the_trailing_statement() {
+    // D.5 / I6: stop bribing → elections; the trailing action never runs.
+    let st = run_src(
+        "@operation(\"Guardian of the Walls\")\n\
+         hasbara(\"security\") {\n\
+           let outpost = allocate(position);\n\
+           postpone(); postpone(); postpone();\n\
+           neutralize(target);\n\
+         }",
+    );
+    assert!(st.ended_by_elections);
+    assert!(st.core <= 0);
+    // The `neutralize` after the fall never executed.
+    assert!(!st.log.iter().any(|e| e.candid.contains("murder")));
+}
+
+#[test]
+fn i6_only_elections_terminates() {
+    // Without an allocation draining core, the program runs to the end and stays in
+    // power — reaching end-of-body is not an in-world halt.
+    let st = run_src("@operation(\"Iron Dome\")\nx = 1;\npostpone();\npostpone();");
+    assert!(!st.ended_by_elections);
+    assert_eq!(st.core, 3); // no live allocation → no upkeep charged
+}
+
+#[test]
+fn explicit_elections_halts() {
+    let st = run_src("@operation(\"Iron Dome\")\nx = 1;\nelections;\ny = 2;");
+    assert!(st.ended_by_elections);
+    assert_eq!(st.env.get("y"), None); // nothing after the fall runs
+}
+
+#[test]
+fn coalition_monotonicity_absent_bribe_core_is_non_increasing() {
+    // With a live allocation and no bribe, each turn only lowers core.
+    let st = run_src(
+        "@operation(\"Guardian of the Walls\")\n\
+         let a = allocate(one);\n\
+         postpone();",
+    );
+    assert!(st.core < st.config.core_start);
+}
+
+#[test]
+fn bribe_tops_up_core() {
+    let st = run_src(
+        "@operation(\"Guardian of the Walls\")\n\
+         let a = allocate(one);\n\
+         bribe(partner, 10);\n\
+         postpone();",
+    );
+    // core: 3 +10 = 13, then -1 upkeep = 12; well clear of elections.
+    assert_eq!(st.core, 12);
+    assert!(!st.ended_by_elections);
+}
+
 #[test]
 fn step_budget_stops_runaway_loops() {
     let cfg = RuntimeConfig {

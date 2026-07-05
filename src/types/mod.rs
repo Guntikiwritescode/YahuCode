@@ -72,8 +72,14 @@ fn check_disclosure(
             Stmt::Hasbara { body, .. } => {
                 check_disclosure(body, context, symtab, diags);
             }
-            // These do not write ACTUAL into the OFFICIAL record in Phase 2.
-            Stmt::Return(_) | Stmt::ExprStmt(_) | Stmt::Action { .. } => {}
+            // These do not force ACTUAL into a lower-clearance record.
+            Stmt::Return(_)
+            | Stmt::ExprStmt(_)
+            | Stmt::Action { .. }
+            | Stmt::Allocate { .. }
+            | Stmt::Bribe { .. }
+            | Stmt::Postpone
+            | Stmt::Elections => {}
         }
     }
 }
