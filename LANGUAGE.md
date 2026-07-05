@@ -357,8 +357,9 @@ balanced(a)                 // predicate — usable in declare(...)
 ```
 
 An out-of-range index does **not** panic the host; it raises a controlled `E-INDEX`
-diagnostic. A slot written inside a `mossad { ... }` scope is covert: it renders
-`[REDACTED]` to under-cleared readers and only the candid figure at `סודי` (I15).
+diagnostic. A negative share is likewise a controlled `E-SHARE` diagnostic (a quota or
+budget line cannot be negative). A slot written inside a `mossad { ... }` scope is covert:
+it renders `[REDACTED]` to under-cleared readers and only the candid figure at `סודי` (I15).
 
 | OFFICIAL | ACTUAL (`סודי`) |
 | --- | --- |
