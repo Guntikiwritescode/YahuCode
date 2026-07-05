@@ -63,6 +63,11 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/13_dawn_of_peace.yahu",
         "tests/golden/example_13.emit",
     ),
+    // Feature C (§9) — laundering depth: Deniable outward, chain retained סודי (D.3).
+    (
+        "examples/14_silent_vigil.yahu",
+        "tests/golden/example_14.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

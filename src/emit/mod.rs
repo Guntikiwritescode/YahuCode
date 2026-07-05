@@ -6,7 +6,7 @@
 //! authority is *entirely* this rule — there is no separate switch. No wildcard arms.
 
 use crate::euphemism::{CONTESTED_TERMS, REDACTION};
-use crate::model::{Audience, Clearance, Provenance, UNAVAILABLE};
+use crate::model::{Audience, Clearance, Provenance, NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE};
 use crate::runtime::State;
 
 // Exact separator strings, byte-for-byte with the oracle's `emit()` (verified by the
@@ -148,11 +148,29 @@ fn assert_vacuity_asymmetry(st: &State) {
     }
 }
 
+/// The C-4 leak guard (Feature C): a `Deniable`-attributed event — one carrying a real
+/// laundering/blame chain — shows **only** the public non-answer on its OFFICIAL face; the
+/// chain never appears publicly (it rides the candid face, revealed only to cleared
+/// readers). Reading `ev.attribution` here makes the field load-bearing and turns a chain
+/// leak into a loud abort in test/debug builds (§12, §13 C-4).
+fn assert_no_attribution_leak(st: &State) {
+    for ev in &st.log {
+        if ev.attribution.is_some() {
+            assert_eq!(
+                ev.official, NEITHER_CONFIRM_NOR_DENY,
+                "C-4 violation: an attributed event's OFFICIAL face is not the deniable \
+                 non-answer (the real chain may be leaking to PUBLIC): {ev:?}"
+            );
+        }
+    }
+}
+
 /// The human-facing render: the two/three faces + framing + coalition + discrepancy
 /// count. Reproduces the oracle's `emit()` exactly.
 pub fn emit(st: &State) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
+    assert_no_attribution_leak(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!("@operation(\"{}\")", st.op_name));
 
@@ -212,6 +230,7 @@ pub fn emit(st: &State) -> String {
 pub fn press(st: &State, comments: &[String]) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
+    assert_no_attribution_leak(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!(
         "@operation(\"{}\")  \u{00b7} press_release build",
@@ -247,6 +266,7 @@ pub fn press(st: &State, comments: &[String]) -> String {
 pub fn room(st: &State, audience: Audience) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
+    assert_no_attribution_leak(st);
     let label = match audience {
         Audience::Domestic => "domestic",
         Audience::International => "international",
@@ -294,6 +314,7 @@ fn json_arr(items: &[String]) -> String {
 pub fn to_json(st: &State) -> String {
     assert_contested_flagged(st);
     assert_vacuity_asymmetry(st);
+    assert_no_attribution_leak(st);
     let restricted = if has_covert(st) {
         json_arr(&project(st, Clearance::Restricted, Audience::Record))
     } else {

@@ -17,7 +17,14 @@ use std::collections::HashMap;
 use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stance, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
-use crate::model::{Audience, Clearance, Discrepancy, Event, Provenance, Truth, Val, UNAVAILABLE};
+use crate::model::{
+    Attribution, Audience, Clearance, Discrepancy, Event, Provenance, Truth, Val,
+    NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE,
+};
+
+/// The default actor — the government running the program. The true origin of a laundered
+/// chain (Feature C): always the last element, never removed (invariant I11).
+const ACTOR: &str = "us";
 
 mod env;
 pub use env::Env;
@@ -772,37 +779,39 @@ fn invoke(name: &str, st: &mut State) -> ExecResult {
     }
 }
 
+/// Record a `Deniable`-attribution event (Feature C): the OFFICIAL non-answer is always
+/// the single "neither confirm nor deny" (`NEITHER_CONFIRM_NOR_DENY`), public; the real
+/// chain rides the candid face (revealed only to cleared readers) and is retained in the
+/// event's `attribution` field for the out-of-world observer. This is the **one**
+/// deniability code path, shared by `via` and covert `blame` — the folded mossad blame
+/// special-case (§13, C-5). The event is PUBLIC-clearance because the non-answer itself
+/// *is* public; the chain never appears on the PUBLIC face (C-4, checked in the emitter).
+fn record_deniable(st: &mut State, candid: String, chain: Vec<String>) {
+    st.log.push(Event {
+        official: NEITHER_CONFIRM_NOR_DENY.to_string(),
+        candid,
+        clearance: Clearance::Public,
+        note: None,
+        provenance: st.candid_provenance(),
+        audience: st.audience,
+        attribution: Some(Attribution::Traceable(chain)),
+    });
+}
+
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).
 ///
-/// - In the open (not covert): self-blame is not representable; it is auto-redirected
-///   to `previous_government`. Any other target is recorded as-is.
-/// - Inside `mossad`: resolution is by clearance (§7.6) — the OFFICIAL/PUBLIC face is
-///   `neither confirm nor deny` (deniability is outward-facing) while the candid face,
-///   readable only by `סודי` insiders, names the real actor. This blame event is
-///   therefore PUBLIC-clearance even though it arises in the covert scope: the
-///   non-answer *is* public.
+/// Its deniability is now **derived from the general attribution rule** (Feature C): a
+/// blame in the open is `Traceable`; a blame inside a covert scope is `Deniable` — the
+/// same rule `via` uses (a covert context launders attribution). The old hard-coded
+/// mossad special-case is gone; a match on the computed `Attribution` drives the two
+/// renderings.
+///
+/// - In the open (`Traceable`): self-blame is not representable and is auto-redirected to
+///   `previous_government`; any other target is recorded as-is.
+/// - Covert (`Deniable`): the OFFICIAL/PUBLIC face is `neither confirm nor deny` while the
+///   candid face names the real actor — via `record_deniable`, the shared path.
 fn blame(who: &str, st: &mut State) {
     const SELF_TARGETS: &[&str] = &["self", "me", "us", "government", "coalition"];
-
-    if st.covert {
-        let actor = if SELF_TARGETS.contains(&who) {
-            "previous_government"
-        } else {
-            who
-        };
-        st.log.push(Event {
-            official: "responsibility: [neither confirm nor deny]".to_string(),
-            candid: format!(
-                "blame \u{2192} {actor} [covert operation \u{2014} insider-attributable, publicly deniable] \u{2014} never `self` (I4)"
-            ),
-            clearance: Clearance::Public,
-            note: None,
-            provenance: Provenance::AuthoredActual,
-            audience: st.audience,
-            attribution: None,
-        });
-        return;
-    }
 
     let redirected = SELF_TARGETS.contains(&who);
     let actor = if redirected {
@@ -810,15 +819,36 @@ fn blame(who: &str, st: &mut State) {
     } else {
         who
     };
-    let suffix = if redirected {
-        " (self-blame not representable \u{2014} auto-redirected)"
+
+    // The attribution effect of a blame in the current context — the general rule.
+    let attr = if st.covert {
+        Attribution::Deniable
     } else {
-        ""
+        Attribution::Traceable(vec![actor.to_string()])
     };
-    st.record(
-        format!("responsibility: {actor}"),
-        format!("blame \u{2192} {actor}{suffix} \u{2014} never `self` (I4)"),
-    );
+
+    match attr {
+        Attribution::Deniable => {
+            record_deniable(
+                st,
+                format!(
+                    "blame \u{2192} {actor} [covert operation \u{2014} insider-attributable, publicly deniable] \u{2014} never `self` (I4)"
+                ),
+                vec![actor.to_string()],
+            );
+        }
+        Attribution::Traceable(_) => {
+            let suffix = if redirected {
+                " (self-blame not representable \u{2014} auto-redirected)"
+            } else {
+                ""
+            };
+            st.record(
+                format!("responsibility: {actor}"),
+                format!("blame \u{2192} {actor}{suffix} \u{2014} never `self` (I4)"),
+            );
+        }
+    }
 }
 
 // ─────────── expression evaluation over ACTUAL ───────────
@@ -875,6 +905,38 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
             // The result is `undisclosed` — contagious within the scope.
             Ok(Val::Undisclosed)
         }
+        // Feature C — laundering. Compute the real chain from the single attribution rule
+        // (I11 lives there), render the innermost action, and record ONE deniable event:
+        // OFFICIAL is the public non-answer; ACTUAL retains the full chain and its depth.
+        Expr::Via { inner, .. } => {
+            let (_outward, chain) = crate::types::attribution(e, ACTOR);
+            let depth = chain.len().saturating_sub(1); // number of `via` layers
+            let core = laundered_core_render(inner, st)?;
+            let candid = format!(
+                "{core} \u{2014} attribution: Traceable[{}] (laundered \u{00d7}{depth}); origin retained",
+                chain.join(" \u{2192} ")
+            );
+            record_deniable(st, candid, chain);
+            Ok(Val::Unit)
+        }
+    }
+}
+
+/// Render the innermost laundered operation for the ACTUAL face (Feature C). Peels the
+/// `via` layers to the core: a sanctioned action renders as its candid `verb(label)`
+/// (e.g. `bomb(dissident)`); anything else is evaluated for effect and its value rendered.
+fn laundered_core_render(e: &Expr, st: &mut State) -> Result<String, EvalError> {
+    match e {
+        Expr::Via { inner, .. } => laundered_core_render(inner, st),
+        Expr::Call { name, args } if euphemism::is_sanctioned(name) => match args.as_slice() {
+            [Expr::Var(target)] => Ok(format!(
+                "{}({})",
+                euphemism::candid_verb(name),
+                euphemism::candid_label(target)
+            )),
+            _ => Ok(pretty(e)),
+        },
+        other => Ok(eval(other, st)?.render()),
     }
 }
 

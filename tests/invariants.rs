@@ -315,6 +315,52 @@ fn i10_doubletalk_is_flagged_only_out_of_world_and_never_halts() {
     }
 }
 
+// ─────────── I11 — Laundering monotonicity (Feature C) ───────────
+
+#[test]
+fn i11_laundering_only_prepends_origin_never_removed() {
+    use yahucode::ast::Expr;
+    use yahucode::model::Attribution;
+    use yahucode::types::attribution;
+
+    // A bare action is Traceable to the origin ("us").
+    let base = Expr::Call {
+        name: "strike".into(),
+        args: vec![Expr::Var("target".into())],
+    };
+    let (a0, ch0) = attribution(&base, "us");
+    assert_eq!(ch0, vec!["us".to_string()]);
+    assert!(matches!(a0, Attribution::Traceable(_)));
+
+    // Wrap it in successive `via` layers; check monotonicity at each depth.
+    let proxies = ["cutout", "a_senior_official", "an_ally"];
+    let mut e = base;
+    let mut prev_len = ch0.len();
+    for (i, p) in proxies.iter().enumerate() {
+        e = Expr::Via {
+            proxy: (*p).into(),
+            inner: Box::new(e),
+        };
+        let (outward, chain) = attribution(&e, "us");
+        assert_eq!(
+            outward,
+            Attribution::Deniable,
+            "laundered ⇒ Deniable outward"
+        );
+        // The true origin is never removed — always the last element.
+        assert_eq!(chain.last().map(String::as_str), Some("us"));
+        // depth = number of `via` layers; length = via_count + 1.
+        assert_eq!(chain.len(), i + 2, "chain length must be via_count + 1");
+        // Prepend-only: the chain only grows, and the nearest proxy is first.
+        assert!(
+            chain.len() > prev_len,
+            "laundering must never shorten a chain"
+        );
+        assert_eq!(chain.first().map(String::as_str), Some(*p));
+        prev_len = chain.len();
+    }
+}
+
 // ─────────── §11 — coalition monotonicity ───────────
 
 #[test]

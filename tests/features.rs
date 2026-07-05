@@ -6,7 +6,9 @@
 //! long rendered strings; exact structural facts (counts, flags, env values) are
 //! asserted precisely.
 
-use yahucode::model::{Audience, Clearance, Provenance, Val, UNAVAILABLE};
+use yahucode::model::{
+    Audience, Clearance, Provenance, Val, NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE,
+};
 use yahucode::runtime::{self, State};
 use yahucode::{emit, parser, types};
 
@@ -704,6 +706,96 @@ address(international) { two_state; }"#);
     assert!(
         emit::doubletalk_flags(&same).is_empty(),
         "the same arm taken twice must not be flagged as double-talk"
+    );
+}
+
+// ─────────── C. attribution effect system (Feature C, §9) ───────────
+
+#[test]
+fn feature_c_via_positive_deniable_outward_chain_retained() {
+    // A laundered op: OFFICIAL is the deniable non-answer; ACTUAL retains the full chain
+    // (nearest proxy first, origin last) and the laundering depth.
+    let st = run(r#"@operation("Silent Vigil")
+mossad {
+  via(a_senior_official, via(cutout, strike(target)));
+}"#);
+    assert!(
+        official(&st).contains(NEITHER_CONFIRM_NOR_DENY),
+        "OFFICIAL must be the deniable non-answer: {}",
+        official(&st)
+    );
+    let act = actual(&st);
+    assert!(
+        act.contains("Traceable[a_senior_official \u{2192} cutout \u{2192} us]"),
+        "ACTUAL must retain the real chain, origin last: {act}"
+    );
+    assert!(
+        act.contains("laundered \u{00d7}2"),
+        "depth must be 2: {act}"
+    );
+    assert!(act.contains("origin retained"), "actual: {act}");
+}
+
+#[test]
+fn feature_c_unlaundered_is_traceable_to_you_negative() {
+    // The effect pass: an un-laundered op is Traceable to the actor (attributable), never
+    // Deniable. This is the negative of laundering.
+    use yahucode::ast::Expr;
+    use yahucode::model::Attribution;
+    let bare = Expr::Call {
+        name: "strike".into(),
+        args: vec![Expr::Var("target".into())],
+    };
+    let (outward, chain) = types::attribution(&bare, "us");
+    assert_eq!(outward, Attribution::Traceable(vec!["us".to_string()]));
+    assert_eq!(chain, vec!["us".to_string()]);
+}
+
+#[test]
+fn feature_c_chain_is_sodi_only_never_on_public_face() {
+    // C-4: the real chain never appears on the PUBLIC face — only the deniable non-answer.
+    let st = run(r#"@operation("Silent Vigil")
+mossad {
+  via(a_senior_official, via(cutout, strike(target)));
+}"#);
+    let pub_face = official(&st);
+    for leaked in ["a_senior_official", "cutout", "Traceable", "laundered"] {
+        assert!(
+            !pub_face.contains(leaked),
+            "the chain fragment {leaked:?} leaked to the PUBLIC face: {pub_face}"
+        );
+    }
+}
+
+#[test]
+fn feature_c_folds_mossad_blame_special_case() {
+    // C-5: covert `blame` and `via` now flow through the SAME deniability path — both
+    // present the identical public non-answer — and covert blame is observably unchanged.
+    let via_st = run(r#"@operation("Silent Vigil")
+mossad { via(cutout, strike(target)); }"#);
+    let blame_st = run("@operation(\"Silent Shield\")\nmossad { blame(operatives); }");
+    assert!(official(&via_st).contains(NEITHER_CONFIRM_NOR_DENY));
+    assert!(official(&blame_st).contains(NEITHER_CONFIRM_NOR_DENY));
+    // Covert blame still names the real actor to סודי, exactly as before the fold.
+    let a = actual(&blame_st);
+    assert!(
+        a.contains("operatives") && a.contains("insider-attributable"),
+        "actual: {a}"
+    );
+    // Both deniable events retain a structured attribution chain (the folded rule).
+    assert!(via_st.log.iter().any(|e| e.attribution.is_some()));
+    assert!(blame_st.log.iter().any(|e| e.attribution.is_some()));
+}
+
+#[test]
+fn feature_c_special_case_string_is_gone_from_runtime_source() {
+    // C-5 structural proof: the old inline deniable-blame special-case is deleted. The
+    // public non-answer appears in the runtime only via the shared model const, never as
+    // a bespoke inline literal in a second blame construction.
+    let src = std::fs::read_to_string("src/runtime/mod.rs").unwrap();
+    assert!(
+        !src.contains("\"responsibility: [neither confirm nor deny]\""),
+        "the folded mossad-blame special-case has re-inlined the deniable string"
     );
 }
 

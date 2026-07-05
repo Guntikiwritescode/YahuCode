@@ -80,6 +80,12 @@ pub enum Audience {
     Record,
 }
 
+/// The public non-answer of a `Deniable` attribution (Feature C): "neither confirm nor
+/// deny". The single OFFICIAL face any laundered/covert-attributed event ever shows —
+/// used by `via` and covert `blame` (the folded mossad special-case) and checked by the
+/// emitter's C-4 leak guard, so the real chain never appears on the PUBLIC face.
+pub const NEITHER_CONFIRM_NOR_DENY: &str = "responsibility: [neither confirm nor deny]";
+
 /// The attribution effect on a result (Feature C, handoff §9): who an action is
 /// traceable to, or that it is publicly deniable. `Traceable` carries the **ordered real
 /// chain** — nearest proxy first, the true origin last. Laundering only ever *prepends*

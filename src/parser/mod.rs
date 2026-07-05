@@ -222,6 +222,13 @@ impl Parser {
                     Ok(Stmt::AddressInternational)
                 }
                 "announce" => self.announce(),
+                // Feature C — a `via(...)` laundering used as a statement is an expression
+                // statement (parsed by `primary`), not a bare call/action.
+                "via" if *self.la(1) == Tok::LParen => {
+                    let e = self.expr()?;
+                    self.eat(&Tok::Semi)?;
+                    Ok(Stmt::ExprStmt(e))
+                }
                 // Feature B — audience dispatch.
                 "address" => self.address(),
                 "statement" => self.poly_statement(),
@@ -749,6 +756,18 @@ impl Parser {
                         let args = self.arg_list()?;
                         self.eat(&Tok::RParen)?;
                         Ok(Expr::External(args))
+                    }
+                    // `via(proxy, inner)` — the laundering operator (Feature C).
+                    "via" if *self.peek() == Tok::LParen => {
+                        self.next(); // '('
+                        let proxy = self.eat_ident()?;
+                        self.eat(&Tok::Comma)?;
+                        let inner = self.expr()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Via {
+                            proxy,
+                            inner: Box::new(inner),
+                        })
                     }
                     _ => {
                         if *self.peek() == Tok::LParen {

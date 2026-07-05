@@ -133,6 +133,15 @@ pub enum Expr {
     /// deterministic mock: it logs a declared effect and returns `undisclosed`
     /// (`neither_confirm_nor_deny`), which is contagious within the covert scope.
     External(Vec<Expr>),
+
+    /// `via(proxy, inner)` — the laundering operator (Feature C, §9). The outward
+    /// attribution is `Deniable`; the real chain **prepends** `proxy` to the inner
+    /// chain (nearest proxy first, true origin last). Laundering only ever adds a layer
+    /// — no operator shortens a chain or removes the origin (invariant I11).
+    Via {
+        proxy: String,
+        inner: Box<Expr>,
+    },
 }
 
 /// A statement. **Closed set** — matched exhaustively in `runtime/` (and `types/`).
@@ -352,6 +361,8 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
                 collect_vars(a, out);
             }
         }
+        // The proxy is an attribution label, not a program variable; recurse the inner.
+        Expr::Via { inner, .. } => collect_vars(inner, out),
     }
 }
 
@@ -383,5 +394,6 @@ pub fn pretty(expr: &Expr) -> String {
             let a: Vec<String> = args.iter().map(pretty).collect();
             format!("external({})", a.join(", "))
         }
+        Expr::Via { proxy, inner } => format!("via({proxy}, {})", pretty(inner)),
     }
 }

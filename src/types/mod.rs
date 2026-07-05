@@ -14,7 +14,7 @@ use std::collections::HashSet;
 
 use crate::ast::{Expr, Program, Stmt};
 use crate::euphemism::{self, Grand};
-use crate::model::Clearance;
+use crate::model::{Attribution, Clearance};
 
 /// Run all static checks and return the diagnostics (empty ⇒ the program compiles).
 /// Order matches the oracle: op-name, then the euphemism/gate walk, then disclosure.
@@ -171,6 +171,11 @@ fn collect_expr_texts(e: &Expr, out: &mut Vec<String>) {
             for a in args {
                 collect_expr_texts(a, out);
             }
+        }
+        // The proxy label is echoed onto the ACTUAL chain — scan it for contested terms.
+        Expr::Via { proxy, inner } => {
+            out.push(proxy.clone());
+            collect_expr_texts(inner, out);
         }
     }
 }
@@ -474,6 +479,59 @@ fn check_disclosure(
     }
 }
 
+// ─────────── Feature C — the attribution effect pass (§9, Appendix C) ───────────
+
+/// Compute an expression's attribution effect: its **outward** attribution (`Deniable`
+/// once anything is laundered, else `Traceable`) and its **real, ordered chain** (nearest
+/// proxy first, true origin last). The single source of the composition rule (§13, C-3);
+/// exhaustive over every `Expr` variant, so a new variant forces a decision here (§13,
+/// C-1). The `Via` arm only ever **prepends** — nothing shortens the chain or removes the
+/// origin (invariant I11): for any nesting, `chain.last() == actor` and
+/// `chain.len() == via_count + 1`.
+pub fn attribution(e: &Expr, actor: &str) -> (Attribution, Vec<String>) {
+    match e {
+        // Leaves and function calls are attributable to the current actor (v1: functions
+        // do not thread attribution through their bodies).
+        Expr::Int(_) | Expr::Bool(_) | Expr::Str(_) | Expr::Var(_) | Expr::Call { .. } => (
+            Attribution::Traceable(vec![actor.to_string()]),
+            vec![actor.to_string()],
+        ),
+        // Structural pass-throughs carry their operand's attribution unchanged.
+        Expr::UnOp { expr, .. }
+        | Expr::Read(expr)
+        | Expr::SelfDefense(expr)
+        | Expr::Cast { expr, .. } => attribution(expr, actor),
+        Expr::BinOp { lhs, rhs, .. } => combine(attribution(lhs, actor), attribution(rhs, actor)),
+        // A foreign call is deniable by construction; the origin is still the actor.
+        Expr::External(_) => (Attribution::Deniable, vec![actor.to_string()]),
+        // Laundering: Deniable outward, and the chain is `[proxy] ++ chain(inner)` —
+        // PREPEND ONLY (I11); never dedup, never shorten, origin never removed.
+        Expr::Via { proxy, inner } => {
+            let (_, inner_chain) = attribution(inner, actor);
+            let mut chain = Vec::with_capacity(inner_chain.len() + 1);
+            chain.push(proxy.clone());
+            chain.extend(inner_chain);
+            (Attribution::Deniable, chain)
+        }
+    }
+}
+
+/// Combine two sub-attributions (for a binary op): `Deniable` if either side is; the real
+/// chain is the more-laundered (longer) side. Never shortens a chain below either input.
+fn combine(
+    l: (Attribution, Vec<String>),
+    r: (Attribution, Vec<String>),
+) -> (Attribution, Vec<String>) {
+    let deniable = l.0 == Attribution::Deniable || r.0 == Attribution::Deniable;
+    let chain = if r.1.len() > l.1.len() { r.1 } else { l.1 };
+    let outward = if deniable {
+        Attribution::Deniable
+    } else {
+        Attribution::Traceable(chain.clone())
+    };
+    (outward, chain)
+}
+
 /// The static clearance of an expression: the max clearance of its leaves, with
 /// `read`/casts/`self_defense` capping or bypassing (handoff §7.3, casts).
 fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
@@ -493,6 +551,8 @@ fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
         Expr::SelfDefense(_) => Clearance::Public,
         // The foreign interface yields `undisclosed` — a covert (סודי) result.
         Expr::External(_) => Clearance::Sodi,
+        // A laundered value's real chain is classified — a covert (סודי) result.
+        Expr::Via { .. } => Clearance::Sodi,
     }
 }
 
