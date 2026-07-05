@@ -37,15 +37,14 @@ impl Clearance {
     }
 }
 
-/// How a face came to be (handoff §7.1). Drives invariant I2 (lossy asymmetry):
-/// an `AuthoredOfficial` value has `actual = Unavailable`, **permanently** — spin is
-/// one-way; there is no `E⁻¹`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Provenance {
-    AuthoredActual,
-    AuthoredOfficial,
-    Covert,
-}
+// NOTE on invariant I2 (lossy asymmetry): the handoff models it with a `Provenance`
+// tag (`AuthoredOfficial ⇒ actual = Unavailable`). In v1 there is no surface syntax to
+// author the OFFICIAL face directly — that is the Phase-7 bidirectional pane, out of
+// scope — so no `AuthoredOfficial` value can ever arise, and a `Provenance` field would
+// be dead scaffolding. I2 is instead enforced structurally: `E` is one-way and
+// non-injective (there is no `E⁻¹`; see the euphemism module and the I2 property test),
+// and the surface only ever authors in the candid register. A `Provenance` tag would be
+// reintroduced with the Phase-7 authoring surface if that is ever built.
 
 /// The three-valued truth used by `declare` and by mossad's contagion (handoff §7.6).
 /// `Undisclosed` is produced only inside `mossad` and is **absorbing** there.
