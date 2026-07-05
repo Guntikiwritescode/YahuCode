@@ -55,8 +55,9 @@ src/
   lexer/          source → tokens; plain-term detection
   parser/         tokens → dual-annotated AST; provenance set at construction (I2)
   types/          static checks: op-name, euphemism typing, hasbara gate, disclosure, casts
-  lower/          feature desugaring (ceasefire → continue, etc.)
   runtime/        the step relation: ACTUAL/OFFICIAL/DISCREPANCY, coalition, mossad, errors
+                  (feature lowerings are trivial and inlined: assert = declare alias in
+                  the parser; ceasefire = no-op continue in the runtime)
   emit/           three-tier projection (the one read path) + --json + the diff render
   cli/            arg parsing, file IO, flags
 tests/            golden / invariants / features / framing suites
@@ -66,7 +67,12 @@ docs/             the execution handoff and the sourcing appendix
 
 ## Status
 
-Under active construction against the phased runbook in `docs/cc-handoff.md`
-(Appendix F). The v1 Python spike in `oracle/` is the behavioural oracle; its
-observable behaviour is frozen as golden fixtures and reproduced exactly, after which
-the spike is removed (behaviour is preserved via the goldens, not the code).
+Complete for v1 (phases 0–6 of `docs/cc-handoff.md`). The interpreter reproduces the
+v1 behavioural oracle exactly: all nine oracle programs are frozen as byte-for-byte
+golden fixtures in `tests/golden/`, and the Python spike has been removed — the
+behaviour is preserved via the goldens, not the code. Four test suites run on every
+change: **golden** (oracle parity), **invariants** (I1–I8 + coalition monotonicity),
+**features** (a positive + negative test per feature), and **framing** (the guardrail
+regression tests for the sensitive features). See [`LANGUAGE.md`](LANGUAGE.md) for the
+language reference and [`docs/sources.md`](docs/sources.md) for every real-world anchor
+and its verification status.

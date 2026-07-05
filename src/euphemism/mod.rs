@@ -10,7 +10,8 @@
 //! assertion (invariant I1) is the chokepoint that makes "OFFICIAL is never uglier
 //! than ACTUAL" mechanically true (guardrail G3).
 //!
-//! Ported faithfully from `oracle/yahucode_v1.py` (the behavioural oracle).
+//! Ported faithfully from the v1 behavioural oracle (a Python spike, removed once its
+//! behaviour was fully reproduced; the goldens in `tests/golden/` are the frozen record).
 
 // ─────────── the euphemism table (ordered: iteration order preserved) ───────────
 
