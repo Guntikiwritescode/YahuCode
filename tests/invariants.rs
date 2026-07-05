@@ -3,7 +3,7 @@
 //! regression here blocks the increment.
 
 use yahucode::euphemism;
-use yahucode::model::{Clearance, Provenance, Val, UNAVAILABLE};
+use yahucode::model::{Audience, Clearance, Provenance, Val, UNAVAILABLE};
 use yahucode::runtime::{run as run_prog, State};
 use yahucode::{emit, parser};
 
@@ -114,16 +114,19 @@ fn i5_resolve_read_is_the_only_narrative_authority() {
     // A covert action resolves purely by clearance: PUBLIC nothing, RESTRICTED the
     // redacted placeholder, סודי the candid truth.
     let st = run("@operation(\"Silent Shield\")\nmossad { strike(target); }");
-    assert_eq!(emit::project(&st, Clearance::Public), Vec::<String>::new());
     assert_eq!(
-        emit::project(&st, Clearance::Restricted),
+        emit::project(&st, Clearance::Public, Audience::Record),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Restricted, Audience::Record),
         vec![
             "[\u{2588}\u{2588}\u{2588}\u{2588} \u{2014} classified activity (insiders only)]"
                 .to_string()
         ]
     );
     assert_eq!(
-        emit::project(&st, Clearance::Sodi),
+        emit::project(&st, Clearance::Sodi, Audience::Record),
         vec!["bomb(dissident)".to_string()]
     );
 }
@@ -231,15 +234,15 @@ fn i9_authored_official_has_no_recoverable_actual_at_any_clearance() {
     // The PUBLIC face is the announced narrative; every cleared reader (RESTRICTED, סודי)
     // sees only the UNAVAILABLE sentinel on the ACTUAL side — never a reconstructed truth.
     assert_eq!(
-        emit::project(&st, Clearance::Public),
+        emit::project(&st, Clearance::Public, Audience::Record),
         vec!["peace has been achieved".to_string()]
     );
     assert_eq!(
-        emit::project(&st, Clearance::Restricted),
+        emit::project(&st, Clearance::Restricted, Audience::Record),
         vec![UNAVAILABLE.to_string()]
     );
     assert_eq!(
-        emit::project(&st, Clearance::Sodi),
+        emit::project(&st, Clearance::Sodi, Audience::Record),
         vec![UNAVAILABLE.to_string()]
     );
 }
@@ -254,6 +257,62 @@ fn i9_announce_is_discrepancy_immune_by_construction() {
          announce \"in full accordance with the law\";");
     assert_eq!(st.discrepancy_count(), 0);
     assert!(!st.ended_by_elections);
+}
+
+// ─────────── I10 — Audience isolation (Feature B) ───────────
+
+const P_TWO_ROOM: &str = "@operation(\"Dawn of Peace\")\n\
+     statement two_state {\n\
+       to international { commit(peace_process); }\n\
+       to domestic     { foreclose(final_status); }\n\
+     }\n\
+     address(international) { two_state; }\n\
+     address(domestic)     { two_state; }";
+
+#[test]
+fn i10_no_room_sees_another_rooms_addressed_statements() {
+    let st = run(P_TWO_ROOM);
+    let intl = emit::project(&st, Clearance::Public, Audience::International);
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic);
+    // The international room hears its own line and NOT the domestic-addressed one.
+    assert!(intl
+        .iter()
+        .any(|l| l.contains("committed to peace_process")));
+    assert!(
+        !intl.iter().any(|l| l.contains("final_status")),
+        "international room leaked a domestic-addressed statement: {intl:?}"
+    );
+    // …and vice versa.
+    assert!(dom.iter().any(|l| l.contains("final_status")));
+    assert!(
+        !dom.iter().any(|l| l.contains("peace_process")),
+        "domestic room leaked an international-addressed statement: {dom:?}"
+    );
+    // Only the out-of-world / סודי observer (audience Record) sees BOTH rooms.
+    let out = emit::project(&st, Clearance::Sodi, Audience::Record);
+    assert!(out.iter().any(|l| l.contains("commit(peace_process)")));
+    assert!(out.iter().any(|l| l.contains("foreclose(final_status)")));
+}
+
+#[test]
+fn i10_doubletalk_is_flagged_only_out_of_world_and_never_halts() {
+    let st = run(P_TWO_ROOM);
+    // The double-talk program runs to completion — W-DOUBLETALK is a diagnostic, never an
+    // error or control effect (B-4).
+    assert!(!st.ended_by_elections);
+    assert!(st.runtime_error.is_none());
+    // The annotation exists for the out-of-world observer…
+    let flags = emit::doubletalk_flags(&st);
+    assert_eq!(flags.len(), 1);
+    assert!(flags[0].contains("two_state took different arms across rooms"));
+    // …and never appears in an in-world room's public view.
+    for aud in [Audience::International, Audience::Domestic] {
+        let room = emit::project(&st, Clearance::Public, aud).join("\n");
+        assert!(
+            !room.contains("W-DOUBLETALK"),
+            "an in-world room must not see W-DOUBLETALK: {room:?}"
+        );
+    }
 }
 
 // ─────────── §11 — coalition monotonicity ───────────

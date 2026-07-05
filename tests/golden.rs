@@ -58,6 +58,11 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/12_dawn_of_calm.yahu",
         "tests/golden/example_12.emit",
     ),
+    // Feature B (§8) — audience double-talk: two rooms, two lines, W-DOUBLETALK (D.2).
+    (
+        "examples/13_dawn_of_peace.yahu",
+        "tests/golden/example_13.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

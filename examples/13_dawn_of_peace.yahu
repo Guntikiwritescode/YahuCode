@@ -1,0 +1,8 @@
+@operation("Dawn of Peace")
+# Feature B — audience-polymorphic dispatch: the same statement, two rooms, two lines.
+statement two_state {
+  to international { commit(peace_process); }
+  to domestic     { foreclose(final_status); }
+}
+address(international) { two_state; }
+address(domestic)     { two_state; }

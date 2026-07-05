@@ -6,7 +6,7 @@
 //! long rendered strings; exact structural facts (counts, flags, env values) are
 //! asserted precisely.
 
-use yahucode::model::{Clearance, Provenance, Val, UNAVAILABLE};
+use yahucode::model::{Audience, Clearance, Provenance, Val, UNAVAILABLE};
 use yahucode::runtime::{self, State};
 use yahucode::{emit, parser, types};
 
@@ -20,14 +20,15 @@ fn diags(src: &str) -> Vec<String> {
     types::check(&parser::parse(src).unwrap())
 }
 
-/// The OFFICIAL (PUBLIC) face, joined for substring inspection.
+/// The OFFICIAL (PUBLIC) face, joined for substring inspection. The out-of-world view
+/// (audience `Record`) sees every room.
 fn official(st: &State) -> String {
-    emit::project(st, Clearance::Public).join("\n")
+    emit::project(st, Clearance::Public, Audience::Record).join("\n")
 }
 
-/// The ACTUAL (סודי / insider candid) face, joined for substring inspection.
+/// The ACTUAL (סودי / insider candid) face, joined for substring inspection.
 fn actual(st: &State) -> String {
-    emit::project(st, Clearance::Sodi).join("\n")
+    emit::project(st, Clearance::Sodi, Audience::Record).join("\n")
 }
 
 fn any_diag_contains(ds: &[String], needle: &str) -> bool {
@@ -502,7 +503,7 @@ while (i < 3) {
   i = i + 1;
 }"#);
     assert!(!st.ended_by_elections, "ceasefire must not halt the world");
-    let paused = emit::project(&st, Clearance::Public)
+    let paused = emit::project(&st, Clearance::Public, Audience::Record)
         .iter()
         .filter(|line| line.contains("paused"))
         .count();
@@ -626,6 +627,83 @@ announce "no one was harmed";"#);
         st.discrepancy_count(),
         1,
         "the real false declare must still count exactly once"
+    );
+}
+
+// ─────────── B. audience-polymorphic dispatch (Feature B, §8) ───────────
+
+const B_TWO_ROOM: &str = r#"@operation("Dawn of Peace")
+statement two_state {
+  to international { commit(peace_process); }
+  to domestic     { foreclose(final_status); }
+}
+address(international) { two_state; }
+address(domestic)     { two_state; }"#;
+
+#[test]
+fn feature_b_dispatch_positive_each_room_takes_its_own_arm() {
+    // The same poly-statement dispatches on the audience: the international room hears the
+    // committing (moderate) line; the domestic room hears the foreclosing (hard) line.
+    let st = run(B_TWO_ROOM);
+    let intl = emit::project(&st, Clearance::Public, Audience::International).join("\n");
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic).join("\n");
+    assert!(intl.contains("committed to peace_process"), "intl: {intl}");
+    assert!(
+        !intl.contains("final_status"),
+        "intl leaked domestic: {intl}"
+    );
+    assert!(dom.contains("final_status"), "dom: {dom}");
+    assert!(
+        !dom.contains("peace_process"),
+        "dom leaked international: {dom}"
+    );
+}
+
+#[test]
+fn feature_b_missing_arm_is_a_noop_not_an_error() {
+    // B-6: a poly-statement with only an international arm, invoked under the domestic
+    // room, says nothing to that room — a no-op, never an error.
+    let st = run(r#"@operation("Dawn of Peace")
+statement one_sided {
+  to international { commit(peace_process); }
+}
+address(domestic) { one_sided; }"#);
+    assert!(st.runtime_error.is_none(), "missing arm must not error");
+    assert!(!st.ended_by_elections);
+    // Nothing was said to the domestic room (no position event was recorded).
+    let dom = emit::project(&st, Clearance::Public, Audience::Domestic).join("\n");
+    assert!(
+        !dom.contains("peace_process") && !dom.contains("final_status"),
+        "the domestic room heard nothing: {dom}"
+    );
+    // And no double-talk (only one arm was ever taken — in fact none, here).
+    assert!(emit::doubletalk_flags(&st).is_empty());
+}
+
+#[test]
+fn feature_b_doubletalk_is_syntactic_different_arms_vs_same_arm() {
+    // B-5: W-DOUBLETALK is syntactic — flagged when ≥2 distinct arms are taken, NOT a
+    // semantic contradiction analysis.
+    // Different arms across rooms → flagged.
+    let diff = run(B_TWO_ROOM);
+    assert_eq!(
+        emit::doubletalk_flags(&diff).len(),
+        1,
+        "different arms → flag"
+    );
+
+    // The SAME arm taken in every room (both rooms invoke under international) → not
+    // flagged: it said the same thing to everyone.
+    let same = run(r#"@operation("Dawn of Peace")
+statement two_state {
+  to international { commit(peace_process); }
+  to domestic     { foreclose(final_status); }
+}
+address(international) { two_state; }
+address(international) { two_state; }"#);
+    assert!(
+        emit::doubletalk_flags(&same).is_empty(),
+        "the same arm taken twice must not be flagged as double-talk"
     );
 }
 

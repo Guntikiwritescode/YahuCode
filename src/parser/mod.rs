@@ -7,10 +7,10 @@
 //! No wildcard arms in statement dispatch: it enumerates every keyword it accepts and
 //! errors on anything else.
 
-use crate::ast::{BinOp, Expr, InertKind, Program, Stmt, UnOp};
+use crate::ast::{BinOp, Expr, InertKind, Program, Stance, Stmt, UnOp};
 use crate::euphemism;
 use crate::lexer::{lex, Tok, Token};
-use crate::model::{Clearance, SODI};
+use crate::model::{Audience, Clearance, SODI};
 
 /// A parse failure (loud, never swallowed — §12).
 #[derive(Clone, Debug, PartialEq)]
@@ -222,9 +222,18 @@ impl Parser {
                     Ok(Stmt::AddressInternational)
                 }
                 "announce" => self.announce(),
+                // Feature B — audience dispatch.
+                "address" => self.address(),
+                "statement" => self.poly_statement(),
+                "commit" => self.position(Stance::Commit),
+                "foreclose" => self.position(Stance::Foreclose),
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
+                    // `name;` — invoke a poly-statement under the current audience (B).
+                    // A bare `ident;` is otherwise not a valid statement, so this is
+                    // unambiguous (mirrors action-verb vs call disambiguation).
+                    Tok::Semi => self.invoke(),
                     other => self.err(format!(
                         "unexpected token after identifier `{kw}`: {other:?}"
                     )),
@@ -490,6 +499,71 @@ impl Parser {
         let text = self.eat_string()?;
         self.eat(&Tok::Semi)?;
         Ok(Stmt::Announce { text })
+    }
+
+    /// `commit(subject);` / `foreclose(subject);` — a policy position (Feature B).
+    fn position(&mut self, stance: Stance) -> Result<Stmt, ParseError> {
+        self.next(); // the stance keyword
+        self.eat(&Tok::LParen)?;
+        let subject = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Position { stance, subject })
+    }
+
+    /// The audience keyword inside `address(...)` / `to ...` — a closed set; `Record` is
+    /// the implicit default and is never written in source.
+    fn audience(&mut self) -> Result<Audience, ParseError> {
+        let word = self.eat_ident()?;
+        match word.as_str() {
+            "domestic" => Ok(Audience::Domestic),
+            "international" => Ok(Audience::International),
+            other => self.err(format!(
+                "unknown audience `{other}` (expected `domestic` or `international`)"
+            )),
+        }
+    }
+
+    /// `address(audience) { … }` — run a block addressing a specific room (Feature B).
+    fn address(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'address'
+        self.eat(&Tok::LParen)?;
+        let audience = self.audience()?;
+        self.eat(&Tok::RParen)?;
+        let body = self.block()?;
+        Ok(Stmt::Address { audience, body })
+    }
+
+    /// `statement name { to X { … } to Y { … } }` — a poly-statement (Feature B).
+    fn poly_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'statement'
+        let name = self.eat_ident()?;
+        self.eat(&Tok::LBrace)?;
+        let mut arms = Vec::new();
+        while *self.peek() != Tok::RBrace {
+            if *self.peek() == Tok::Eof {
+                return self.err("unterminated poly-statement");
+            }
+            // `to <audience> { … }`
+            match self.peek().clone() {
+                Tok::Ident(k) if k == "to" => {
+                    self.next(); // 'to'
+                }
+                other => return self.err(format!("expected `to <audience>`, got {other:?}")),
+            }
+            let audience = self.audience()?;
+            let body = self.block()?;
+            arms.push((audience, body));
+        }
+        self.eat(&Tok::RBrace)?;
+        Ok(Stmt::PolyStatement { name, arms })
+    }
+
+    /// `name;` — invoke a poly-statement under the current audience (Feature B).
+    fn invoke(&mut self) -> Result<Stmt, ParseError> {
+        let name = self.eat_ident()?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Invoke { name })
     }
 
     fn hasbara(&mut self) -> Result<Stmt, ParseError> {

@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stmt, UnOp};
+use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stance, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
 use crate::model::{Audience, Clearance, Discrepancy, Event, Provenance, Truth, Val, UNAVAILABLE};
@@ -46,6 +46,13 @@ pub struct State {
     pub env: Env,
     /// User-defined functions: name → (params, body).
     pub funcs: HashMap<String, (Vec<String>, Vec<Stmt>)>,
+    /// Poly-statements (Feature B): name → per-audience arms. Registered like `funcs`.
+    pub poly: HashMap<String, Vec<(Audience, Vec<Stmt>)>>,
+    /// The double-talk log (Feature B): `(poly name, arm index)` for each invocation that
+    /// *took* an arm. A poly-statement that took ≥2 distinct arms across rooms said
+    /// different things to different audiences → `W-DOUBLETALK` (a syntactic, out-of-world
+    /// diagnostic; never an error, §8.3).
+    pub doubletalk_log: Vec<(String, usize)>,
     /// OFFICIAL log — append-only, clearance-tagged.
     pub log: Vec<Event>,
     /// DISCREPANCY ledger — append-only, read-never-by-default.
@@ -86,6 +93,8 @@ impl State {
         State {
             env: Env::new(),
             funcs: HashMap::new(),
+            poly: HashMap::new(),
+            doubletalk_log: Vec::new(),
             log: Vec::new(),
             discrepancies: Vec::new(),
             allocations: Vec::new(),
@@ -529,6 +538,32 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // Feature B — a policy position, tagged with the current audience (room).
+        Stmt::Position { stance, subject } => {
+            position(*stance, subject, st);
+            Ok(Flow::Next)
+        }
+
+        // Feature B — address a room: set the audience for the block, restore on exit
+        // (mirrors the mossad covert save/restore). Audience is orthogonal to clearance.
+        Stmt::Address { audience, body } => {
+            let saved = st.audience;
+            st.audience = *audience;
+            let flow = exec_block(body, st);
+            st.audience = saved;
+            flow
+        }
+
+        // Feature B — register a poly-statement (like a FuncDef); no event, no effect yet.
+        Stmt::PolyStatement { name, arms } => {
+            st.poly.insert(name.clone(), arms.clone());
+            Ok(Flow::Next)
+        }
+
+        // Feature B — invoke a poly-statement under the current audience: run the matching
+        // arm (a no matching arm is a NO-OP to this room, not an error, §8.2).
+        Stmt::Invoke { name } => invoke(name, st),
+
         Stmt::Action {
             verb,
             target,
@@ -681,6 +716,60 @@ fn announce(text: &str, st: &mut State) {
         audience: st.audience,
         attribution: None,
     });
+}
+
+/// The Feature B framing note (G7/I8), rendered whenever a policy position is stated to a
+/// room. It is **normative** and framing-tested: the butt is the government's double-talk;
+/// audiences are political *rooms*, never identity groups (G1); the international face is
+/// the prettier (moderate) one (polarity, matching the anchor).
+const B_FRAMING: &str = "#B framing: the butt is the GOVERNMENT'S double-talk \u{2014} the same statement tailored to different political ROOMS (a domestic-political room vs an international-diplomatic room), never ethnic, national, or religious identity groups. The international (English) face is the prettier, moderate one; the domestic face is the harder line. No room sees the other; only the out-of-world observer sees the contradiction (W-DOUBLETALK). [sourced; reporting-plus-analysis]";
+
+/// The lowercased room word for a candid position line.
+fn room_label(a: Audience) -> &'static str {
+    match a {
+        Audience::Domestic => "domestic",
+        Audience::International => "international",
+        Audience::Record => "on-the-record",
+    }
+}
+
+/// `commit(subject)` / `foreclose(subject)` — state a policy position to the current room
+/// (Feature B). OFFICIAL carries the prettier diplomatic phrasing; ACTUAL exposes the
+/// tailored line and which room it was addressed to. The event is audience-tagged (via
+/// `record_noted`, which stamps `st.audience`) so the per-room projection isolates it (I10).
+fn position(stance: Stance, subject: &str, st: &mut State) {
+    let room = room_label(st.audience);
+    let (official, candid) = match stance {
+        Stance::Commit => (
+            format!("we remain committed to {subject}"),
+            format!("commit({subject}) \u{2014} the moderate line, addressed to the {room} room"),
+        ),
+        Stance::Foreclose => (
+            format!("{subject} remains open to direct negotiation"),
+            format!(
+                "foreclose({subject}) \u{2014} ruled out; the hard line, addressed to the {room} room"
+            ),
+        ),
+    };
+    st.record_noted(official, candid, B_FRAMING);
+}
+
+/// `name;` — invoke a poly-statement under the current audience (Feature B). Runs the arm
+/// matching `st.audience`; records `(name, arm index)` so the emitter can surface
+/// `W-DOUBLETALK`. **A missing arm is a no-op to this room, not an error** (§8.2); an
+/// undefined poly-statement is a genuine fault (like an unknown function).
+fn invoke(name: &str, st: &mut State) -> ExecResult {
+    let Some(arms) = st.poly.get(name).cloned() else {
+        return Err(EvalError(format!("unknown poly-statement `{name}`")));
+    };
+    match arms.iter().position(|(aud, _)| *aud == st.audience) {
+        Some(idx) => {
+            st.doubletalk_log.push((name.to_string(), idx));
+            exec_block(&arms[idx].1, st)
+        }
+        // No arm for this room: the government simply said nothing to them. Not an error.
+        None => Ok(Flow::Next),
+    }
 }
 
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).

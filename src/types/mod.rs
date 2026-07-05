@@ -134,6 +134,16 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
             // The announced text is user-supplied and echoed to the OFFICIAL face — scan
             // it for contested characterizations (E-CONTESTED) like any other output text.
             Stmt::Announce { text } => out.push(text.clone()),
+            // Feature B — the policy subject and poly-statement/room text are echoed too.
+            Stmt::Position { subject, .. } => out.push(subject.clone()),
+            Stmt::Address { body, .. } => collect_user_texts(body, out),
+            Stmt::PolyStatement { name, arms } => {
+                out.push(name.clone());
+                for (_, body) in arms {
+                    collect_user_texts(body, out);
+                }
+            }
+            Stmt::Invoke { name } => out.push(name.clone()),
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -224,6 +234,14 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             }
             Stmt::While { body, .. } => check_gate(body, gated, funcs, diags),
             Stmt::FuncDef { body, .. } => check_gate(body, false, funcs, diags),
+            // Feature B — an `address` block and each poly-statement arm are ordinary
+            // blocks for gating (a classified action inside still needs a gate/scope).
+            Stmt::Address { body, .. } => check_gate(body, gated, funcs, diags),
+            Stmt::PolyStatement { arms, .. } => {
+                for (_, body) in arms {
+                    check_gate(body, gated, funcs, diags);
+                }
+            }
             Stmt::ExprStmt(Expr::Call { name, .. }) => {
                 if !funcs.contains(name) {
                     diags.push(format!(
@@ -265,7 +283,9 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::Inert { .. }
             | Stmt::Investigate { .. }
             | Stmt::AddressInternational
-            | Stmt::Announce { .. } => {}
+            | Stmt::Announce { .. }
+            | Stmt::Position { .. }
+            | Stmt::Invoke { .. } => {}
         }
     }
 }
@@ -280,8 +300,14 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                     names.insert(name.clone());
                     walk(body, names);
                 }
-                Stmt::Hasbara { body, .. } | Stmt::Mossad { body } | Stmt::While { body, .. } => {
-                    walk(body, names)
+                Stmt::Hasbara { body, .. }
+                | Stmt::Mossad { body }
+                | Stmt::While { body, .. }
+                | Stmt::Address { body, .. } => walk(body, names),
+                Stmt::PolyStatement { arms, .. } => {
+                    for (_, body) in arms {
+                        walk(body, names);
+                    }
                 }
                 Stmt::If {
                     then_body,
@@ -318,7 +344,9 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Inert { .. }
                 | Stmt::Investigate { .. }
                 | Stmt::AddressInternational
-                | Stmt::Announce { .. } => {}
+                | Stmt::Announce { .. }
+                | Stmt::Position { .. }
+                | Stmt::Invoke { .. } => {}
             }
         }
     }
@@ -401,6 +429,18 @@ fn check_disclosure(
                 // values may be declared there without disclosure.
                 check_disclosure(body, Clearance::Sodi, symtab, diags);
             }
+            // Feature B — an `address` block runs inline in the enclosing scope.
+            Stmt::Address { body, .. } => {
+                check_disclosure(body, context, symtab, diags);
+            }
+            // A poly-statement is a definition (its arms run when invoked); check each arm
+            // independently at PUBLIC, like a function body.
+            Stmt::PolyStatement { arms, .. } => {
+                for (_, body) in arms {
+                    let mut inner: SymTab = HashMap::new();
+                    check_disclosure(body, Clearance::Public, &mut inner, diags);
+                }
+            }
             // These do not force ACTUAL into a lower-clearance record.
             Stmt::Return(_)
             | Stmt::ExprStmt(_)
@@ -427,7 +467,9 @@ fn check_disclosure(
             | Stmt::Inert { .. }
             | Stmt::Investigate { .. }
             | Stmt::AddressInternational
-            | Stmt::Announce { .. } => {}
+            | Stmt::Announce { .. }
+            | Stmt::Position { .. }
+            | Stmt::Invoke { .. } => {}
         }
     }
 }

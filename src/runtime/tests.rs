@@ -199,18 +199,21 @@ fn runtime_fault_trace_is_redacted_on_the_public_face() {
 fn mossad_activity_is_sodi_tagged_three_tier() {
     // D.4: covert action absent from PUBLIC, redacted for RESTRICTED, candid for סודי.
     use crate::emit::project;
-    use crate::model::Clearance;
+    use crate::model::{Audience, Clearance};
     let st = run_src("@operation(\"Silent Shield\")\nmossad { strike(target); }");
-    assert_eq!(project(&st, Clearance::Public), Vec::<String>::new());
     assert_eq!(
-        project(&st, Clearance::Restricted),
+        project(&st, Clearance::Public, Audience::Record),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        project(&st, Clearance::Restricted, Audience::Record),
         vec![
             "[\u{2588}\u{2588}\u{2588}\u{2588} \u{2014} classified activity (insiders only)]"
                 .to_string()
         ]
     );
     assert_eq!(
-        project(&st, Clearance::Sodi),
+        project(&st, Clearance::Sodi, Audience::Record),
         vec!["bomb(dissident)".to_string()]
     );
 }
@@ -257,14 +260,14 @@ fn blame_of_an_external_actor_is_recorded_as_is() {
 fn covert_blame_resolves_by_clearance() {
     // §7.6: publicly `neither confirm nor deny`; insider-attributable to the real actor.
     use crate::emit::project;
-    use crate::model::Clearance;
+    use crate::model::{Audience, Clearance};
     let st = run_src("@operation(\"Silent Shield\")\nmossad { blame(operatives); }");
     assert_eq!(
-        project(&st, Clearance::Public),
+        project(&st, Clearance::Public, Audience::Record),
         vec!["responsibility: [neither confirm nor deny]".to_string()]
     );
     // The candid (סודי) face names the real actor.
-    let sodi = project(&st, Clearance::Sodi);
+    let sodi = project(&st, Clearance::Sodi, Audience::Record);
     assert!(sodi[0].contains("operatives"));
     assert!(sodi[0].contains("insider-attributable"));
 }
