@@ -52,6 +52,7 @@ YahuCode is dependency-free and builds warning-free on a stable Rust toolchain.
 cargo build                     # build the interpreter
 cargo run -- file.yahu          # run a program, print both faces + discrepancies
 cargo run -- --json file.yahu   # run and emit structured JSON (official/actual/…)
+cargo run -- --press file.yahu  # the public build: press release + rewritten comments
 cargo test                      # golden + invariant + per-feature + framing suites
 ```
 

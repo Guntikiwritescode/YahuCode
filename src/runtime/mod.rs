@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use crate::ast::{pretty, vars_in, BinOp, Expr, Program, Stmt, UnOp};
+use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
 use crate::model::{Clearance, Discrepancy, Event, Truth, Val};
@@ -453,15 +453,14 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
         // Read-only-and-inert: consulted for optics, never affecting ACTUAL.
         Stmt::Inert { kind } => {
-            let (official, candid) = match kind.as_str() {
-                "polls" => (
-                    "polls consulted".to_string(),
-                    "polls \u{2192} read-only, inert; consulted for optics; no effect on policy".to_string(),
+            let (official, candid) = match kind {
+                InertKind::Polls => (
+                    "polls consulted",
+                    "polls \u{2192} read-only, inert; consulted for optics; no effect on policy",
                 ),
-                // world_opinion (the only other Inert kind produced by the parser)
-                _ => (
-                    "world opinion duly noted".to_string(),
-                    "world_opinion \u{2192} read-only, inert; noted and ignored; no effect on ACTUAL".to_string(),
+                InertKind::WorldOpinion => (
+                    "world opinion duly noted",
+                    "world_opinion \u{2192} read-only, inert; noted and ignored; no effect on ACTUAL",
                 ),
             };
             st.record(official, candid);

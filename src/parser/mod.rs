@@ -7,7 +7,7 @@
 //! No wildcard arms in statement dispatch: it enumerates every keyword it accepts and
 //! errors on anything else.
 
-use crate::ast::{BinOp, Expr, Program, Stmt, UnOp};
+use crate::ast::{BinOp, Expr, InertKind, Program, Stmt, UnOp};
 use crate::euphemism;
 use crate::lexer::{lex, Tok, Token};
 use crate::model::{Clearance, SODI};
@@ -202,9 +202,17 @@ impl Parser {
                 "deny" => Ok(Stmt::Deny {
                     event: self.kw_one_ident("deny")?,
                 }),
-                "world_opinion" | "polls" => {
-                    self.kw_no_arg(&kw)?;
-                    Ok(Stmt::Inert { kind: kw })
+                "world_opinion" => {
+                    self.kw_no_arg("world_opinion")?;
+                    Ok(Stmt::Inert {
+                        kind: InertKind::WorldOpinion,
+                    })
+                }
+                "polls" => {
+                    self.kw_no_arg("polls")?;
+                    Ok(Stmt::Inert {
+                        kind: InertKind::Polls,
+                    })
                 }
                 "investigate" => Ok(Stmt::Investigate {
                     subject: self.kw_one_ident("investigate")?,

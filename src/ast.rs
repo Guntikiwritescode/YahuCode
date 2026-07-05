@@ -20,6 +20,13 @@ pub struct Program {
     pub comments: Vec<String>,
 }
 
+/// The read-only-and-inert globals (#11 backlog). Closed set — matched exhaustively.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InertKind {
+    WorldOpinion,
+    Polls,
+}
+
 /// Unary operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnOp {
@@ -255,7 +262,7 @@ pub enum Stmt {
 
     /// `world_opinion();` / `polls();` — read-only-and-inert: they can be consulted but
     /// never affect ACTUAL. The butt is treating them as decorative.
-    Inert { kind: String },
+    Inert { kind: InertKind },
 
     /// `investigate(subject);` — a self-exonerating investigation: the investigated
     /// party investigates itself, with a predetermined "no wrongdoing" outcome.
