@@ -1,18 +1,6 @@
 # YahuCode
 
-A **satirical esoteric programming language**. Its subject is the **messaging
-apparatus and wartime conduct of the Israeli government** — a government and its
-rhetoric, *never a people*. The comedy engine is the gap between what code *does*
-and what you are permitted to *call it*: euphemism, deflection, unaccountability,
-two-faced messaging.
-
-> YahuCode aims at a government's behaviour and its excuses. It never makes Jewish
-> people, Judaism, or Hebrew-as-identity the joke; Hebrew appears only as the texture
-> of officialdom. The butt is always the maneuver, never the victims. See
-> [`docs/cc-handoff.md`](docs/cc-handoff.md) §2 for the full guardrails, and
-> [`docs/sources.md`](docs/sources.md) for the sourcing of every real-world anchor.
-
-It is a genuinely novel little machine, not a reskin. Four ordinary compiler ideas
+It is a novel little machine, not a reskin. Four ordinary compiler ideas
 are each replaced by a thematic mechanism that is load-bearing:
 
 - **Types → clearance/audience.** A value's type is *who may see it*
