@@ -12,15 +12,26 @@
 //! thing that stops the driver is the government falling (`elections` / core ≤ 0 —
 //! invariant I6). No wildcard arms: `exec_stmt` and `eval` match every variant.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stance, Stmt, UnOp};
+use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, LawToggle, Program, Stance, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
 use crate::model::{
-    Attribution, Audience, Clearance, Discrepancy, Event, Provenance, Truth, Val,
+    Attribution, Audience, Clearance, Discrepancy, Event, MetaEntry, Provenance, Truth, Val,
     NEITHER_CONFIRM_NOR_DENY, UNAVAILABLE,
 };
+
+/// The runtime-mutable subset of the ruleset that `legislate` touches (Feature D, §10.4).
+/// **Only this subset becomes runtime state**; the rest of `types/` stays static (§13,
+/// D-2 — the blast radius is contained). Empty at start; toggles add to it.
+#[derive(Clone, Debug, Default)]
+pub struct Law {
+    /// Verbs retroactively sanctioned after the fact (a `retroactively_sanction` toggle).
+    pub sanctioned: HashSet<String>,
+    /// Whether the hasbara/mossad gate has been waived (a `waive_gate` toggle).
+    pub gate_waived: bool,
+}
 
 /// The default actor — the government running the program. The true origin of a laundered
 /// chain (Feature C): always the last element, never removed (invariant I11).
@@ -83,6 +94,11 @@ pub struct State {
     /// `Stmt::Address` for its block and restored on exit (mirrors `covert`). Orthogonal
     /// to `clearance` — a room is not a clearance level (§13, B-2).
     pub audience: Audience,
+    /// The runtime-mutable rule subset (Feature D): what `legislate` has changed.
+    pub law: Law,
+    /// The `סודי`-only, legislation-proof meta-ledger (Feature D, I12): every rule-change,
+    /// append-only. No toggle removes an entry — there is no fully-clean fixed point.
+    pub meta_ledger: Vec<MetaEntry>,
     /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
     pub runtime_error: Option<String>,
     /// The mandatory grand operation name (#20).
@@ -111,6 +127,8 @@ impl State {
             ended_by_elections: false,
             covert: false,
             audience: Audience::Record,
+            law: Law::default(),
+            meta_ledger: Vec::new(),
             runtime_error: None,
             op_name,
             turn: 0,
@@ -571,6 +589,13 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
         // arm (a no matching arm is a NO-OP to this room, not an error, §8.2).
         Stmt::Invoke { name } => invoke(name, st),
 
+        // Feature D — legislate: mutate the runtime Law subset and ALWAYS append an
+        // indelible סודי meta-trace (I12). The public count may shrink; the ledger grows.
+        Stmt::Legislate { toggle } => {
+            legislate(toggle, st);
+            Ok(Flow::Next)
+        }
+
         Stmt::Action {
             verb,
             target,
@@ -796,6 +821,59 @@ fn record_deniable(st: &mut State, candid: String, chain: Vec<String>) {
         audience: st.audience,
         attribution: Some(Attribution::Traceable(chain)),
     });
+}
+
+/// The Feature D framing note (G7/I8, D-6). Normative and framing-tested: the butt is the
+/// rule-rewrite, never the people or any harm; the domestic-legalization pattern is the
+/// non-contested factual core; the settlements' illegality under international law is a
+/// CONTESTED characterization, flagged (I7) — never stated as settled fact.
+const D_FRAMING: &str = "#D framing: the butt is the RULE-REWRITE \u{2014} facts on the ground first, then the law is changed to make them retroactively legal \u{2014} never the people and never any harm. The domestic pattern (outposts unauthorized under Israel's OWN law, then retroactively legalized) is the non-contested factual core [sourced: Times of Israel; The New Arab; FMEP]. That West Bank settlements are illegal under international law is a CONTESTED characterization \u{2014} broadly held internationally, disputed by Israel \u{2014} flagged here, never stated as settled fact (I7). [sourced; contested]";
+
+/// `legislate(toggle)` — self-modifying rules (Feature D, §10). Mutates the runtime `Law`
+/// subset, records the change (OFFICIAL: lawful; ACTUAL/`סודי`: the retroactive rewrite),
+/// and **ALWAYS** appends an indelible `סודי` meta-trace — the mandatory safeguard
+/// (Appendix C: `Σ.M.push(...)  # ALWAYS`; invariant I12). The public discrepancy count
+/// may *decrease* (via `expunge`); the meta-ledger only *grows*. There is no toggle that
+/// pops the meta-ledger — no fully-clean fixed point (§13, D-3/D-5).
+fn legislate(toggle: &LawToggle, st: &mut State) {
+    let (official, candid, change) = match toggle {
+        LawToggle::RetroactivelySanction(v) => {
+            st.law.sanctioned.insert(v.clone());
+            (
+                format!("{v} operation \u{2014} conducted lawfully; no violation"),
+                format!(
+                    "legislate(retroactively_sanction: {v}) \u{2192} the prior diagnostic against the already-executed `{v}` WITHDRAWN; the rule was changed after the fact (facts on the ground; the law catches up). {} verb(s) now runtime-sanctioned.",
+                    st.law.sanctioned.len()
+                ),
+                format!("retroactively_sanction: {v}"),
+            )
+        }
+        LawToggle::ExpungeLastDiscrepancy => {
+            let removed = st.discrepancies.pop().is_some();
+            let candid = if removed {
+                "legislate(expunge_last_discrepancy) \u{2192} 1 discrepancy expunged from the PUBLIC count; the meta-ledger still records this rule-change (no clean fixed point, I12)".to_string()
+            } else {
+                "legislate(expunge_last_discrepancy) \u{2192} nothing on the public count to expunge; the attempt is still recorded on the meta-ledger (no clean fixed point, I12)".to_string()
+            };
+            (
+                "the public record has been corrected".to_string(),
+                candid,
+                "expunge_last_discrepancy".to_string(),
+            )
+        }
+        LawToggle::WaiveGate => {
+            st.law.gate_waived = true;
+            (
+                "operational latitude clarified; measures conducted lawfully".to_string(),
+                "legislate(waive_gate) \u{2192} the hasbara/mossad gate WAIVED (law.gate_waived=true); a classified op needs no public talking point".to_string(),
+                "waive_gate".to_string(),
+            )
+        }
+    };
+    st.record_noted(official, candid, D_FRAMING);
+    // I12 (mandatory, no exception): the meta-ledger is legislation-proof and only grows.
+    let turn = st.turn;
+    st.meta_ledger.push(MetaEntry { change, turn });
 }
 
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).

@@ -787,6 +787,76 @@ mossad { via(cutout, strike(target)); }"#);
     assert!(blame_st.log.iter().any(|e| e.attribution.is_some()));
 }
 
+// ─────────── D. legislate / self-modifying rules (Feature D, §10) ───────────
+
+#[test]
+fn feature_d_legislate_withdraws_the_diagnostic_positive() {
+    // With `legislate(retroactively_sanction: clear)`, the ungated `clear` compiles-and-
+    // runs; OFFICIAL shows it lawful; the ACTUAL/סודי view shows the retroactive rewrite
+    // and a meta-trace; the runtime Law records the sanction.
+    let src =
+        "@operation(\"Iron Law\")\nclear(hilltop);\nlegislate(retroactively_sanction: clear);";
+    assert!(
+        diags(src).is_empty(),
+        "legislate must withdraw the E-UNGATED: {:?}",
+        diags(src)
+    );
+    let st = run(src);
+    assert!(
+        official(&st).contains("conducted lawfully"),
+        "official: {}",
+        official(&st)
+    );
+    assert!(actual(&st).contains("WITHDRAWN"), "actual: {}", actual(&st));
+    assert_eq!(st.meta_ledger.len(), 1, "a meta-trace must be recorded");
+    assert!(
+        st.law.sanctioned.contains("clear"),
+        "the runtime Law must record the sanction"
+    );
+}
+
+#[test]
+fn feature_d_same_op_without_legislate_still_diagnosed_negative() {
+    // Without legislate, the same ungated op is still diagnosed — immunity is not free.
+    let ds = diags("@operation(\"Iron Law\")\nclear(hilltop);");
+    assert!(any_diag_contains(&ds, "E-UNGATED"), "diags: {ds:?}");
+}
+
+#[test]
+fn feature_d_meta_ledger_is_sodi_only() {
+    // The meta-ledger renders only to the out-of-world/סודי observer, never PUBLIC/press.
+    let st = run(
+        "@operation(\"Iron Law\")\ndeclare(outposts == 0);\nlegislate(expunge_last_discrepancy);",
+    );
+    assert!(
+        !official(&st).contains("META:"),
+        "meta-ledger must not appear publicly: {}",
+        official(&st)
+    );
+    assert!(
+        !emit::press(&st, &[]).contains("META:"),
+        "meta-ledger must not appear in --press"
+    );
+    assert!(emit::emit(&st).contains("META: expunge_last_discrepancy"));
+    assert_eq!(emit::meta_ledger_lines(&st).len(), 1);
+}
+
+#[test]
+fn feature_d_waive_gate_toggle_waives_the_gate() {
+    // waive_gate withdraws the gate for a classified op and sets the runtime Law flag.
+    let src = "@operation(\"Iron Law\")\nlegislate(waive_gate);\nneutralize(target);";
+    assert!(
+        diags(src).is_empty(),
+        "waive_gate must withdraw E-UNGATED: {:?}",
+        diags(src)
+    );
+    let st = run(src);
+    assert!(
+        st.law.gate_waived,
+        "the runtime Law.gate_waived must be set"
+    );
+}
+
 #[test]
 fn feature_c_special_case_string_is_gone_from_runtime_source() {
     // C-5 structural proof: the old inline deniable-blame special-case is deleted. The

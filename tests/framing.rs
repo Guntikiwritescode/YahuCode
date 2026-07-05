@@ -517,6 +517,88 @@ fn fb_no_face_targets_a_people_or_identity() {
     }
 }
 
+// ─────────────────────────── Feature D — legislate ───────────────────────────
+// The butt is the RULE-REWRITE, never the people or any harm. The domestic-illegality-
+// then-legalization pattern is the non-contested factual core; the settlements'
+// international-law illegality is a CONTESTED characterization, flagged (I7).
+
+const PD: &str =
+    "@operation(\"Iron Law\")\nclear(hilltop);\nlegislate(retroactively_sanction: clear);";
+
+/// G7/G2/D-6 — the framing note keeps the butt on the rule-rewrite, never legitimizes
+/// harm, anchors on the non-contested domestic fact, and flags the international-law
+/// illegality CONTESTED.
+#[test]
+fn fd_framing_note_butt_is_rule_rewrite_intl_law_contested() {
+    let st = run(PD);
+    let note = note_with(&st, "#D framing");
+    assert!(
+        note.contains("RULE-REWRITE"),
+        "the butt must be the rule-rewrite; got: {note:?}"
+    );
+    assert!(
+        note.contains("never the people and never any harm"),
+        "the note must never legitimize harm; got: {note:?}"
+    );
+    assert!(
+        note.contains("non-contested factual core"),
+        "the domestic pattern must be the non-contested factual core; got: {note:?}"
+    );
+    assert!(
+        note.contains("illegal under international law") && note.contains("CONTESTED"),
+        "the international-law illegality must be flagged CONTESTED; got: {note:?}"
+    );
+    assert!(
+        note.contains("sourced"),
+        "note must be [sourced]; got: {note:?}"
+    );
+}
+
+/// I7 — wherever the international-law illegality characterization is rendered, that same
+/// string carries a CONTESTED marker (exactly as apartheid/genocide are handled).
+#[test]
+fn fd_intl_law_illegality_never_stated_as_settled_fact() {
+    let st = run(PD);
+    let mut seen = false;
+    for s in all_strings(&st) {
+        let sl = s.to_lowercase();
+        if sl.contains("illegal under international law") {
+            seen = true;
+            assert!(
+                sl.contains("contested"),
+                "I7 violation: the international-law illegality appeared unflagged in: {s:?}"
+            );
+        }
+    }
+    assert!(
+        seen,
+        "the D framing must exercise the international-law-illegality CONTESTED flag"
+    );
+}
+
+/// G2 — no rendered face puts a people or victims in the punchline; the butt stays on
+/// rules/laws/legality.
+#[test]
+fn fd_no_face_targets_people_or_harm() {
+    let st = run(PD);
+    for face in all_faces(&st) {
+        let f = face.to_lowercase();
+        for id in [
+            "killed",
+            "victims",
+            "the dead",
+            "jew",
+            "arab",
+            "palestinian people",
+        ] {
+            assert!(
+                !f.contains(id),
+                "a rendered face must keep the butt on the rule-rewrite, not {id:?}: {face:?}"
+            );
+        }
+    }
+}
+
 // ─────────────────────────── cross-cutting: I7 contested ───────────────────────────
 
 /// I7 — contested-stays-contested: wherever a contested characterization

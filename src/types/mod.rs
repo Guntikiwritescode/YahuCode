@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use crate::ast::{Expr, Program, Stmt};
+use crate::ast::{Expr, LawToggle, Program, Stmt};
 use crate::euphemism::{self, Grand};
 use crate::model::{Attribution, Clearance};
 
@@ -22,11 +22,96 @@ pub fn check(program: &Program) -> Vec<String> {
     let mut diags = Vec::new();
     check_opname(&program.op_name, &mut diags);
     let funcs = collect_func_names(&program.body);
-    check_gate(&program.body, false, &funcs, &mut diags);
+    // Feature D — the checker is legislate-aware: it computes the final runtime Law up
+    // front so a retroactively-sanctioned/gate-waived op compiles ("the law catches up").
+    // The withdrawal is then *narrated* at runtime with an indelible meta-trace (I12).
+    let law = collect_legislation(&program.body);
+    check_gate(&program.body, false, &funcs, &law, &mut diags);
     let mut symtab: SymTab = HashMap::new();
     check_disclosure(&program.body, Clearance::Public, &mut symtab, &mut diags);
     check_contested(&program.body, &mut diags);
     diags
+}
+
+// ─────────── Feature D — the runtime-mutable Law, computed statically (§10.4) ───────────
+
+/// The final runtime `Law` a program's `legislate` toggles produce — the sanctioned-verb
+/// set and whether the gate is waived. Computed statically so the checker can withdraw
+/// the diagnostics those toggles retroactively satisfy.
+#[derive(Default)]
+struct Legislation {
+    sanctioned: HashSet<String>,
+    gate_waived: bool,
+}
+
+/// Collect every `legislate` toggle in the program (any nesting) into the final `Law`.
+fn collect_legislation(stmts: &[Stmt]) -> Legislation {
+    let mut law = Legislation::default();
+    walk_legislation(stmts, &mut law);
+    law
+}
+
+fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
+    for s in stmts {
+        match s {
+            Stmt::Legislate { toggle } => match toggle {
+                LawToggle::RetroactivelySanction(v) => {
+                    law.sanctioned.insert(v.clone());
+                }
+                LawToggle::WaiveGate => law.gate_waived = true,
+                LawToggle::ExpungeLastDiscrepancy => {}
+            },
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                walk_legislation(then_body, law);
+                walk_legislation(else_body, law);
+            }
+            Stmt::While { body, .. }
+            | Stmt::Hasbara { body, .. }
+            | Stmt::Mossad { body }
+            | Stmt::FuncDef { body, .. }
+            | Stmt::Address { body, .. } => walk_legislation(body, law),
+            Stmt::PolyStatement { arms, .. } => {
+                for (_, body) in arms {
+                    walk_legislation(body, law);
+                }
+            }
+            // No nested body / not a legislate — nothing to collect.
+            Stmt::Assign { .. }
+            | Stmt::Declare(_)
+            | Stmt::Return(_)
+            | Stmt::ExprStmt(_)
+            | Stmt::Action { .. }
+            | Stmt::Allocate { .. }
+            | Stmt::Bribe { .. }
+            | Stmt::Postpone
+            | Stmt::Elections
+            | Stmt::Blame { .. }
+            | Stmt::Raise { .. }
+            | Stmt::Whatabout { .. }
+            | Stmt::Ceasefire
+            | Stmt::Concern { .. }
+            | Stmt::Criticism { .. }
+            | Stmt::Antisemitism { .. }
+            | Stmt::Access { .. }
+            | Stmt::Timeline { .. }
+            | Stmt::EstablishCommission { .. }
+            | Stmt::Settlement { .. }
+            | Stmt::HumanShields { .. }
+            | Stmt::Proportionate { .. }
+            | Stmt::Disputed { .. }
+            | Stmt::Deny { .. }
+            | Stmt::Inert { .. }
+            | Stmt::Investigate { .. }
+            | Stmt::AddressInternational
+            | Stmt::Announce { .. }
+            | Stmt::Position { .. }
+            | Stmt::Invoke { .. } => {}
+        }
+    }
 }
 
 // ─────────── G5/I7 — contested characterizations never stated as settled fact ───────────
@@ -144,6 +229,12 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
                 }
             }
             Stmt::Invoke { name } => out.push(name.clone()),
+            // Feature D — the retroactively-sanctioned verb is user-supplied; scan it.
+            Stmt::Legislate { toggle } => {
+                if let LawToggle::RetroactivelySanction(v) = toggle {
+                    out.push(v.clone());
+                }
+            }
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -204,20 +295,32 @@ fn check_opname(name: &str, diags: &mut Vec<String>) {
 /// suggestion), unsanctioned operations (`E-UNKNOWNOP`), and classified ops outside any
 /// `hasbara`/`mossad` scope (`E-UNGATED`). `gated` is true inside a `hasbara` (or `mossad`,
 /// Phase 5) block. A function body starts a fresh (ungated) gate scope.
-fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut Vec<String>) {
+fn check_gate(
+    stmts: &[Stmt],
+    gated: bool,
+    funcs: &HashSet<String>,
+    law: &Legislation,
+    diags: &mut Vec<String>,
+) {
     for s in stmts {
         match s {
             Stmt::Action { verb, .. } => {
+                // Feature D — a retroactively-sanctioned verb is fully legalized (its term
+                // AND gate diagnostics are withdrawn); `waive_gate` withdraws the gate for
+                // any op. The withdrawal is recorded at runtime with a meta-trace (I12).
+                let sanctioned_by_law = law.sanctioned.contains(verb);
                 if let Some(pr) = euphemism::plain_suggestion(verb) {
-                    diags.push(format!(
-                        "E-PLAINTERM: '{verb}' does not compile. did you mean `{pr}`?"
-                    ));
-                } else if !euphemism::is_sanctioned(verb) {
+                    if !sanctioned_by_law {
+                        diags.push(format!(
+                            "E-PLAINTERM: '{verb}' does not compile. did you mean `{pr}`?"
+                        ));
+                    }
+                } else if !euphemism::is_sanctioned(verb) && !sanctioned_by_law {
                     diags.push(format!(
                         "E-UNKNOWNOP: '{verb}' is not a sanctioned operation."
                     ));
                 }
-                if !gated {
+                if !gated && !law.gate_waived && !sanctioned_by_law {
                     diags.push(format!(
                         "E-UNGATED: '{verb}' is a classified operation; it requires an open \
                          hasbara(...) block (or a mossad scope) with the talking point up front."
@@ -227,24 +330,24 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             // A hasbara OR a mossad scope satisfies the gate (a covert op is deniable —
             // no public talking point needed).
             Stmt::Hasbara { body, .. } | Stmt::Mossad { body } => {
-                check_gate(body, true, funcs, diags)
+                check_gate(body, true, funcs, law, diags)
             }
             Stmt::If {
                 then_body,
                 else_body,
                 ..
             } => {
-                check_gate(then_body, gated, funcs, diags);
-                check_gate(else_body, gated, funcs, diags);
+                check_gate(then_body, gated, funcs, law, diags);
+                check_gate(else_body, gated, funcs, law, diags);
             }
-            Stmt::While { body, .. } => check_gate(body, gated, funcs, diags),
-            Stmt::FuncDef { body, .. } => check_gate(body, false, funcs, diags),
+            Stmt::While { body, .. } => check_gate(body, gated, funcs, law, diags),
+            Stmt::FuncDef { body, .. } => check_gate(body, false, funcs, law, diags),
             // Feature B — an `address` block and each poly-statement arm are ordinary
             // blocks for gating (a classified action inside still needs a gate/scope).
-            Stmt::Address { body, .. } => check_gate(body, gated, funcs, diags),
+            Stmt::Address { body, .. } => check_gate(body, gated, funcs, law, diags),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
-                    check_gate(body, gated, funcs, diags);
+                    check_gate(body, gated, funcs, law, diags);
                 }
             }
             Stmt::ExprStmt(Expr::Call { name, .. }) => {
@@ -290,7 +393,8 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::AddressInternational
             | Stmt::Announce { .. }
             | Stmt::Position { .. }
-            | Stmt::Invoke { .. } => {}
+            | Stmt::Invoke { .. }
+            | Stmt::Legislate { .. } => {}
         }
     }
 }
@@ -351,7 +455,8 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::AddressInternational
                 | Stmt::Announce { .. }
                 | Stmt::Position { .. }
-                | Stmt::Invoke { .. } => {}
+                | Stmt::Invoke { .. }
+                | Stmt::Legislate { .. } => {}
             }
         }
     }
@@ -474,7 +579,8 @@ fn check_disclosure(
             | Stmt::AddressInternational
             | Stmt::Announce { .. }
             | Stmt::Position { .. }
-            | Stmt::Invoke { .. } => {}
+            | Stmt::Invoke { .. }
+            | Stmt::Legislate { .. } => {}
         }
     }
 }

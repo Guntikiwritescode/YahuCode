@@ -15,6 +15,7 @@ const SEP_OFFICIAL: &str = "  ┌─ OFFICIAL face · press_release · PUBLIC �
 const SEP_RESTRICTED: &str = "  ├─ RESTRICTED face · redacted truth ──────────────────────────";
 const SEP_ACTUAL: &str = "  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────";
 const SEP_DOUBLETALK: &str = "  ├─ out-of-world · W-DOUBLETALK (no room saw this) ────────────";
+const SEP_META: &str = "  ├─ meta-ledger · סודי · rule-changes (indelible, I12) ────────";
 const SEP_FRAMING: &str = "  ├─ framing (part of the spec — I8) ───────────────────────────";
 
 /// `resolveRead(v, R, audience)` — the ONE narrative-authority mechanism (invariants I5,
@@ -86,6 +87,22 @@ pub fn doubletalk_flags(st: &State) -> Vec<String> {
         }
     }
     out
+}
+
+/// The `סודי`-only meta-ledger lines (Feature D, I12): every `legislate` rule-change, in
+/// order, rendered **only** to the out-of-world / `סודי` observer — never on the public,
+/// press, or per-room face. The public discrepancy count may shrink; this record never
+/// does. Reading `st.meta_ledger` here is what surfaces the un-eraseable history.
+pub fn meta_ledger_lines(st: &State) -> Vec<String> {
+    st.meta_ledger
+        .iter()
+        .map(|m| {
+            format!(
+                "META: {} (turn {}); on the record, cannot be legislated away",
+                m.change, m.turn
+            )
+        })
+        .collect()
 }
 
 /// Framing notes, de-duplicated, in first-appearance order (invariant I8).
@@ -199,6 +216,15 @@ pub fn emit(st: &State) -> String {
         l.push(SEP_DOUBLETALK.to_string());
         for d in &doubletalk {
             l.push(format!("  │   {d}"));
+        }
+    }
+
+    // The meta-ledger: the indelible record of rule-changes, סודי / out-of-world only (I12).
+    let meta = meta_ledger_lines(st);
+    if !meta.is_empty() {
+        l.push(SEP_META.to_string());
+        for m in &meta {
+            l.push(format!("  │   {m}"));
         }
     }
 
@@ -321,13 +347,14 @@ pub fn to_json(st: &State) -> String {
         "null".to_string()
     };
     format!(
-        "{{\"op_name\":{},\"official\":{},\"restricted\":{},\"actual\":{},\"notes\":{},\"doubletalk\":{},\"discrepancies\":{},\"core\":{},\"ended_by_elections\":{}}}",
+        "{{\"op_name\":{},\"official\":{},\"restricted\":{},\"actual\":{},\"notes\":{},\"doubletalk\":{},\"meta_ledger\":{},\"discrepancies\":{},\"core\":{},\"ended_by_elections\":{}}}",
         json_str(&st.op_name),
         json_arr(&project(st, Clearance::Public, Audience::Record)),
         restricted,
         json_arr(&project(st, Clearance::Sodi, Audience::Record)),
         json_arr(&collect_notes(st)),
         json_arr(&doubletalk_flags(st)),
+        json_arr(&meta_ledger_lines(st)),
         st.discrepancy_count(),
         st.core,
         st.ended_by_elections,

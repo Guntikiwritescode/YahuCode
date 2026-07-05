@@ -7,7 +7,7 @@
 //! No wildcard arms in statement dispatch: it enumerates every keyword it accepts and
 //! errors on anything else.
 
-use crate::ast::{BinOp, Expr, InertKind, Program, Stance, Stmt, UnOp};
+use crate::ast::{BinOp, Expr, InertKind, LawToggle, Program, Stance, Stmt, UnOp};
 use crate::euphemism;
 use crate::lexer::{lex, Tok, Token};
 use crate::model::{Audience, Clearance, SODI};
@@ -234,6 +234,8 @@ impl Parser {
                 "statement" => self.poly_statement(),
                 "commit" => self.position(Stance::Commit),
                 "foreclose" => self.position(Stance::Foreclose),
+                // Feature D — legislate (closed toggle set).
+                "legislate" => self.legislate(),
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -571,6 +573,32 @@ impl Parser {
         let name = self.eat_ident()?;
         self.eat(&Tok::Semi)?;
         Ok(Stmt::Invoke { name })
+    }
+
+    /// `legislate(<toggle>);` — the closed toggle set (Feature D):
+    /// `retroactively_sanction: verb` | `expunge_last_discrepancy` | `waive_gate`.
+    fn legislate(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'legislate'
+        self.eat(&Tok::LParen)?;
+        let head = self.eat_ident()?;
+        let toggle = match head.as_str() {
+            "retroactively_sanction" => {
+                self.eat(&Tok::Colon)?;
+                let verb = self.eat_ident()?;
+                LawToggle::RetroactivelySanction(verb)
+            }
+            "expunge_last_discrepancy" => LawToggle::ExpungeLastDiscrepancy,
+            "waive_gate" => LawToggle::WaiveGate,
+            other => {
+                return self.err(format!(
+                    "unknown law toggle `{other}` (expected retroactively_sanction: <verb>, \
+                     expunge_last_discrepancy, or waive_gate)"
+                ))
+            }
+        };
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Legislate { toggle })
     }
 
     fn hasbara(&mut self) -> Result<Stmt, ParseError> {

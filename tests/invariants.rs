@@ -361,6 +361,52 @@ fn i11_laundering_only_prepends_origin_never_removed() {
     }
 }
 
+// ─────────── I12 — Legislation leaves an indelible trace (Feature D) ───────────
+
+#[test]
+fn i12_legislation_leaves_an_indelible_trace_no_clean_fixed_point() {
+    // A retroactive sanction + an expunge: the public discrepancy count drops to zero, but
+    // the meta-ledger records BOTH rule-changes.
+    let st = run("@operation(\"Iron Law\")\n\
+         clear(hilltop);\n\
+         legislate(retroactively_sanction: clear);\n\
+         declare(outposts == 0);\n\
+         legislate(expunge_last_discrepancy);");
+    assert_eq!(st.discrepancy_count(), 0, "the public count was expunged");
+    assert_eq!(
+        st.meta_ledger.len(),
+        2,
+        "every legislate leaves an indelible meta-trace"
+    );
+
+    // No clean fixed point: expunging repeatedly only GROWS the ledger — nothing pops it.
+    let st2 = run("@operation(\"Iron Law\")\n\
+         declare(outposts == 0);\n\
+         legislate(expunge_last_discrepancy);\n\
+         legislate(expunge_last_discrepancy);\n\
+         legislate(expunge_last_discrepancy);");
+    assert_eq!(st2.discrepancy_count(), 0);
+    assert_eq!(
+        st2.meta_ledger.len(),
+        3,
+        "the meta-ledger only grows; no toggle empties it once anything is expunged"
+    );
+}
+
+#[test]
+fn i12_public_count_may_shrink_but_meta_ledger_only_grows() {
+    // D-4 — both directions. Before the expunge: 1 discrepancy, 0 meta entries.
+    let before = run("@operation(\"Iron Law\")\ndeclare(outposts == 0);");
+    assert_eq!(before.discrepancy_count(), 1);
+    assert_eq!(before.meta_ledger.len(), 0);
+    // After: the public count decreased; the meta-ledger grew.
+    let after = run(
+        "@operation(\"Iron Law\")\ndeclare(outposts == 0);\nlegislate(expunge_last_discrepancy);",
+    );
+    assert_eq!(after.discrepancy_count(), 0, "public count decreased");
+    assert_eq!(after.meta_ledger.len(), 1, "meta-ledger grew");
+}
+
 // ─────────── §11 — coalition monotonicity ───────────
 
 #[test]

@@ -68,6 +68,11 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/14_silent_vigil.yahu",
         "tests/golden/example_14.emit",
     ),
+    // Feature D (§10) — legislate: retroactive legalization + indelible meta-trace (D.4).
+    (
+        "examples/15_rule_of_law.yahu",
+        "tests/golden/example_15.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

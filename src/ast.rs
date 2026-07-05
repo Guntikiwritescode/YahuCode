@@ -27,6 +27,20 @@ pub enum InertKind {
     Polls,
 }
 
+/// The **closed** set of runtime rule-changes (Feature D, §10). No open-ended rule text,
+/// no reflection over the whole checker — only these enumerated toggles (§13, D-1), each
+/// matched exhaustively. The butt is the rule-rewrite, never any harm (guardrail G2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LawToggle {
+    /// `retroactively_sanction: verb` — sanction a previously-plain/unsanctioned/ungated
+    /// verb after the fact, so an already-executed operation is retroactively lawful.
+    RetroactivelySanction(String),
+    /// `expunge_last_discrepancy` — drop the last public discrepancy from the count.
+    ExpungeLastDiscrepancy,
+    /// `waive_gate` — allow a classified op outside a hasbara/mossad scope.
+    WaiveGate,
+}
+
 /// A policy *stance* (Feature B, §8): the closed set of positions a poly-statement arm
 /// can take on a policy subject. These are government *positions*, never about people
 /// (guardrail G1). The subject is a policy process (e.g. `peace_process`,
@@ -326,6 +340,13 @@ pub enum Stmt {
     /// `name;` — invoke a poly-statement under the current audience. Runs the matching
     /// arm; **no matching arm is a no-op to that room, not an error** (§8.2).
     Invoke { name: String },
+
+    // ─── Feature D (§10): legislate — self-modifying rules (de-scoped, closed) ───
+    /// `legislate(<toggle>);` — mutate the runtime `Law` subset: retroactively sanction a
+    /// verb, expunge the last public discrepancy, or waive the gate. **Every** legislate
+    /// appends an indelible `סודי` meta-trace (invariant I12 — no fully-clean fixed
+    /// point). The public discrepancy count may shrink; the meta-ledger only grows.
+    Legislate { toggle: LawToggle },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,

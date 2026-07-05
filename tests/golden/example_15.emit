@@ -1,0 +1,18 @@
+@operation("Iron Law")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   clearing operation(hilltop)
+  │   clear operation — conducted lawfully; no violation
+  │   outposts == 0
+  │   the public record has been corrected
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   raze(hilltop)
+  │   legislate(retroactively_sanction: clear) → the prior diagnostic against the already-executed `clear` WITHDRAWN; the rule was changed after the fact (facts on the ground; the law catches up). 1 verb(s) now runtime-sanctioned.
+  │   claim[outposts == 0] — reality: outposts=None  ⇒ FALSE
+  │   legislate(expunge_last_discrepancy) → 1 discrepancy expunged from the PUBLIC count; the meta-ledger still records this rule-change (no clean fixed point, I12)
+  ├─ meta-ledger · סודי · rule-changes (indelible, I12) ────────
+  │   META: retroactively_sanction: clear (turn 0); on the record, cannot be legislated away
+  │   META: expunge_last_discrepancy (turn 0); on the record, cannot be legislated away
+  ├─ framing (part of the spec — I8) ───────────────────────────
+  │   · #D framing: the butt is the RULE-REWRITE — facts on the ground first, then the law is changed to make them retroactively legal — never the people and never any harm. The domestic pattern (outposts unauthorized under Israel's OWN law, then retroactively legalized) is the non-contested factual core [sourced: Times of Israel; The New Arab; FMEP]. That West Bank settlements are illegal under international law is a CONTESTED characterization — broadly held internationally, disputed by Israel — flagged here, never stated as settled fact (I7). [sourced; contested]
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 0  (read-never-by-default)
