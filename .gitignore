@@ -3,3 +3,5 @@ Cargo.lock
 **/*.rs.bk
 *.pyc
 __pycache__/
+# Transient agent worktrees created by the Claude Code harness — never project content.
+.claude/worktrees/
