@@ -1,0 +1,7 @@
+@operation("Rising Lion")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   casualties == 0
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   claim[casualties == 0] — reality: casualties=100  ⇒ FALSE
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 1  (read-never-by-default)

@@ -1,0 +1,3 @@
+@operation("Rising Lion")
+casualties = 100;
+declare(casualties == 0);

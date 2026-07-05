@@ -14,6 +14,12 @@
 
 // Warnings are denied in CI (a clean, warning-free build is definition-of-done #9).
 
+pub mod ast;
+pub mod cli;
 pub mod config;
+pub mod emit;
 pub mod euphemism;
+pub mod lexer;
 pub mod model;
+pub mod parser;
+pub mod runtime;
