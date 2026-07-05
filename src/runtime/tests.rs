@@ -282,3 +282,32 @@ fn step_budget_stops_runaway_loops() {
     assert!(st.runtime_error.as_deref().unwrap().contains("step budget"));
     assert!(!st.ended_by_elections);
 }
+
+#[test]
+fn step_budget_stops_an_empty_bodied_loop() {
+    // Regression: a side-effect-free `while (true) {}` must NOT hang — each iteration
+    // charges a step even with an empty body.
+    let cfg = RuntimeConfig {
+        max_steps: 1000,
+        ..RuntimeConfig::default()
+    };
+    let st = run_with_config(&parse("@operation(\"X\")\nwhile (true) {}").unwrap(), cfg);
+    assert!(st.runtime_error.as_deref().unwrap().contains("step budget"));
+}
+
+#[test]
+fn bribe_saturates_instead_of_overflowing() {
+    // Regression: a huge bribe must not panic (debug) / wrap (release) the ledger.
+    let st = run_src("@operation(\"Guardian of the Walls\")\nbribe(x, 9223372036854775807);");
+    assert_eq!(st.core, i64::MAX); // 3 + i64::MAX saturates
+    assert!(st.runtime_error.is_none());
+}
+
+#[test]
+fn unary_negation_does_not_panic_on_int_min() {
+    // Regression: `-x` where x wrapped to i64::MIN must not panic.
+    let st = run_src("@operation(\"X\")\nx = 9223372036854775807 + 1;\ny = -x;");
+    assert!(st.runtime_error.is_none());
+    assert_eq!(st.env.get("x"), Some(&Val::Int(i64::MIN)));
+    assert_eq!(st.env.get("y"), Some(&Val::Int(i64::MIN))); // wrapping_neg(MIN) == MIN
+}

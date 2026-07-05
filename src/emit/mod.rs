@@ -59,9 +59,38 @@ fn has_covert(st: &State) -> bool {
     st.log.iter().any(|e| e.clearance == Clearance::Sodi)
 }
 
+/// Contested legal/political characterizations that must never be stated as settled
+/// fact in the tool's own voice (guardrail G5 / invariant I7).
+const CONTESTED_TERMS: &[&str] = &["apartheid", "genocide", "most moral army"];
+
+/// The I7 chokepoint (the emitter-side analogue of the I1 polarity assertion): any event
+/// that mentions a contested characterization must also carry a `CONTESTED` marker in
+/// one of its faces or its note. Fail-loud and live in all builds — a future edit that
+/// launders a contested claim into the tool's own voice aborts here rather than shipping.
+fn assert_contested_flagged(st: &State) {
+    for ev in &st.log {
+        let blob = format!(
+            "{} {} {}",
+            ev.official,
+            ev.candid,
+            ev.note.as_deref().unwrap_or("")
+        )
+        .to_lowercase();
+        for term in CONTESTED_TERMS {
+            if blob.contains(term) {
+                assert!(
+                    blob.contains("contested"),
+                    "I7 violation: {term:?} rendered without a CONTESTED flag in event {ev:?}"
+                );
+            }
+        }
+    }
+}
+
 /// The human-facing render: the two/three faces + framing + coalition + discrepancy
 /// count. Reproduces the oracle's `emit()` exactly.
 pub fn emit(st: &State) -> String {
+    assert_contested_flagged(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!("@operation(\"{}\")", st.op_name));
 
@@ -132,6 +161,7 @@ fn json_arr(items: &[String]) -> String {
 /// discrepancies}` fixtures. `restricted` is `null` unless there is covert activity
 /// (mirrors the emitter showing that face only then).
 pub fn to_json(st: &State) -> String {
+    assert_contested_flagged(st);
     let restricted = if has_covert(st) {
         json_arr(&project(st, Clearance::Restricted))
     } else {

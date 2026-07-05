@@ -95,6 +95,23 @@ fn undefined_call_is_unknown_op() {
 }
 
 #[test]
+fn disclosure_join_is_sound_across_a_conditional_reassignment() {
+    // Regression: a σודי value reassigned to a public value only on ONE path must still
+    // be caught (the not-taken path leaves it classified). The join at the merge keeps
+    // the most-classified possibility, so the leak is not lost.
+    let d = diags(
+        "@operation(\"Silent Shield\")\n\
+         x = (סודי) 7;\n\
+         if (x == 7) { x = 5; }\n\
+         declare(x == 0);",
+    );
+    assert!(
+        d.iter().any(|s| s.contains("E-DISCLOSURE")),
+        "the conditional reassignment must not hide the σודי leak; got {d:?}"
+    );
+}
+
+#[test]
 fn reclassify_up_is_sound_and_still_discloses_publicly() {
     // Casting a public value UP to סודי then declaring it publicly is a disclosure
     // (reclassify-up is sound, but the value is now classified).

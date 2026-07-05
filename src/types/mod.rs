@@ -177,6 +177,16 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
 
 type SymTab = HashMap<String, Clearance>;
 
+/// Merge `src` into `dst` by taking the max clearance per variable — the dataflow join
+/// for the disclosure lattice (`Public < Restricted < Sodi`). The most-classified
+/// possibility wins, so a leak on any path is never lost.
+fn join_into(dst: &mut SymTab, src: &SymTab) {
+    for (k, &c) in src {
+        let merged = dst.get(k).map_or(c, |&d| d.max(c));
+        dst.insert(k.clone(), merged);
+    }
+}
+
 /// The disclosure pass: an operation that would force `actual` into a lower-clearance
 /// context without a read-resolution or a cast is a disclosure (handoff §7.3). The
 /// clearest such sink is `declare`, which writes the OFFICIAL record that PUBLIC reads.
@@ -209,13 +219,23 @@ fn check_disclosure(
                 then_body,
                 else_body,
             } => {
-                // Control flow branches on ACTUAL; branching on a classified condition
-                // is not itself a disclosure. Walk both bodies.
-                check_disclosure(then_body, context, symtab, diags);
-                check_disclosure(else_body, context, symtab, diags);
+                // Branching on a classified condition is not itself a disclosure. Check
+                // each branch on its own copy, then JOIN (max clearance) so a
+                // classified assignment on *either* path can't be lost at the merge
+                // (soundness: no missed disclosure — the safe over-approximation).
+                let mut then_tab = symtab.clone();
+                check_disclosure(then_body, context, &mut then_tab, diags);
+                let mut else_tab = symtab.clone();
+                check_disclosure(else_body, context, &mut else_tab, diags);
+                join_into(symtab, &then_tab);
+                join_into(symtab, &else_tab);
             }
             Stmt::While { cond: _, body } => {
-                check_disclosure(body, context, symtab, diags);
+                // The body may run zero or more times; join its effect with the
+                // pre-loop state (the not-run path).
+                let mut body_tab = symtab.clone();
+                check_disclosure(body, context, &mut body_tab, diags);
+                join_into(symtab, &body_tab);
             }
             Stmt::FuncDef { body, .. } => {
                 // A function body has its own scope; check it independently at PUBLIC.

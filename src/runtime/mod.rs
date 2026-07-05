@@ -139,6 +139,21 @@ impl State {
             Clearance::Public
         }
     }
+
+    /// Charge one evaluation step against the non-termination safety valve (§12). A
+    /// loud implementation abort, never a silent hang and never the in-world `elections`
+    /// outcome. Called per statement AND per loop iteration, so a cheap/empty loop body
+    /// (`while (true) {}`) can never spin forever.
+    fn charge_step(&mut self) -> Result<(), EvalError> {
+        self.steps += 1;
+        if self.steps > self.config.max_steps {
+            return Err(EvalError(format!(
+                "step budget exceeded ({}); possible non-termination",
+                self.config.max_steps
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Run a program with the default runtime config.
@@ -176,15 +191,7 @@ fn exec_block(stmts: &[Stmt], st: &mut State) -> ExecResult {
 }
 
 fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
-    // Non-termination safety valve: a loud implementation abort, never a silent hang
-    // and never the in-world `elections` outcome (§12).
-    st.steps += 1;
-    if st.steps > st.config.max_steps {
-        return Err(EvalError(format!(
-            "step budget exceeded ({}); possible non-termination",
-            st.config.max_steps
-        )));
-    }
+    st.charge_step()?;
 
     match s {
         Stmt::Assign { var, value } => {
@@ -217,6 +224,8 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
                 if st.ended_by_elections {
                     return Ok(Flow::Next);
                 }
+                // Charge a step per iteration so an empty/cheap body can't spin forever.
+                st.charge_step()?;
                 let c = eval(cond, st)?;
                 if c.truth() != Truth::True {
                     break;
@@ -437,7 +446,8 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
                     )))
                 }
             };
-            st.core += amt;
+            // Saturating: a bribe can't overflow the coalition ledger into a crash.
+            st.core = st.core.saturating_add(amt);
             st.record(
                 format!("coalition partner accommodated (+{amt})"),
                 format!("bribe({name}, {amt}) \u{2192} core={}", st.core),
@@ -690,7 +700,9 @@ fn eval_binop(op: BinOp, lhs: &Expr, rhs: &Expr, st: &mut State) -> EvalResult {
 
 fn apply_unop(op: UnOp, v: Val) -> EvalResult {
     match (op, v) {
-        (UnOp::Neg, Val::Int(n)) => Ok(Val::Int(-n)),
+        // Wrapping negation, consistent with the wrapping arithmetic (avoids a panic
+        // on i64::MIN, which a wrapping `+` can produce).
+        (UnOp::Neg, Val::Int(n)) => Ok(Val::Int(n.wrapping_neg())),
         (UnOp::Not, Val::Bool(b)) => Ok(Val::Bool(!b)),
         (UnOp::Neg, other) => type_err("unary -", &other),
         (UnOp::Not, other) => type_err("!", &other),

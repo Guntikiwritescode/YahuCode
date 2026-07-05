@@ -454,3 +454,25 @@ fn i7_contested_terms_stay_contested() {
         "#17 must mention apartheid so the CONTESTED flag is mechanically exercised"
     );
 }
+
+// ─────────────────────────── #19 standalone safeguard ───────────────────────────
+// `criticism` and `antisemitism` are separate statements (matching the oracle), so a
+// program can use `criticism` alone. The safeguard against the denialist/naive reading
+// must therefore live on the `criticism` statement ITSELF: even standalone, its framing
+// note affirms antisemitism is REAL. This test fails if that affirmation is ever
+// stripped from the criticism note — the false-negative half stays un-eraseable even
+// when the two statements are not paired in a program.
+#[test]
+fn f19_criticism_alone_still_affirms_antisemitism_is_real() {
+    let st = run("@operation(\"Eternal Vigilance\")\ncriticism(war_crimes);");
+    let note = note_with(&st, "#19 framing");
+    assert!(
+        note.contains("antisemitism is REAL"),
+        "criticism alone must still affirm antisemitism is REAL (the safeguard); got: {note:?}"
+    );
+    assert!(
+        note.contains("SELECTIVE deployment"),
+        "the butt must be the selective deployment, not the reality of antisemitism; got: {note:?}"
+    );
+    assert!(note.contains("sourced") && note.contains("contested"));
+}
