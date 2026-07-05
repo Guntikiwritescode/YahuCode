@@ -24,6 +24,8 @@ pub enum Tok {
     Comma,
     Semi,
     Eq,
+    /// a `# …` line comment (its trimmed text)
+    Comment(String),
     // comparison / equality
     EqEq,
     Ne,
@@ -90,6 +92,20 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             }
             c if c.is_whitespace() => {
                 i += 1;
+            }
+            // `# …` line comment. Collected (not discarded) so the press build can
+            // rewrite it (#8 comment-rewriting / docs-contradict-code).
+            '#' => {
+                i += 1;
+                let start = i;
+                while i < n && chars[i] != '\n' {
+                    i += 1;
+                }
+                let text: String = chars[start..i].iter().collect();
+                out.push(Token {
+                    tok: Tok::Comment(text.trim().to_string()),
+                    line,
+                });
             }
             '@' => {
                 // Only `@operation` exists in the grammar.

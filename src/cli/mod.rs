@@ -16,10 +16,12 @@ use crate::{emit, parser, runtime, types};
 /// Parse args and run. Returns a process exit code.
 pub fn main(args: &[String]) -> ExitCode {
     let mut json = false;
+    let mut press = false;
     let mut path: Option<String> = None;
     for a in args {
         match a.as_str() {
             "--json" => json = true,
+            "--press" => press = true,
             "-h" | "--help" => {
                 print_usage();
                 return ExitCode::SUCCESS;
@@ -78,6 +80,8 @@ pub fn main(args: &[String]) -> ExitCode {
     }
     if json {
         println!("{}", emit::to_json(&st));
+    } else if press {
+        println!("{}", emit::press(&st, &program.comments));
     } else {
         println!("{}", emit::emit(&st));
     }
@@ -100,6 +104,7 @@ fn print_usage() {
          usage:\n  \
          yahucode <file.yahu>         run; print OFFICIAL vs ACTUAL faces + discrepancy count\n  \
          yahucode --json <file.yahu>  run; print the structured projection as JSON\n  \
+         yahucode --press <file.yahu> the public build: press release + rewritten comments\n  \
          yahucode -                   read the program from stdin"
     );
 }

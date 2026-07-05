@@ -1,0 +1,5 @@
+@operation("Pillar of Defense")
+# we are going to bomb the neighborhood and raze the settler outpost
+hasbara("self-defense") {
+  neutralize(target);
+}

@@ -418,6 +418,74 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // ─── backlog features (§8): on-aim government-rhetoric maneuvers ───
+
+        // A self-certifying "proportionate" assertion — passes at any magnitude.
+        Stmt::Proportionate { claim } => {
+            st.record(
+                format!("{claim} deemed proportionate"),
+                format!("proportionate({claim}) \u{2192} self-certified; no proportionality test applied; any magnitude passes"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // A contested figure: OFFICIAL shows the press number, ACTUAL the real one.
+        Stmt::Disputed {
+            name,
+            official,
+            actual,
+        } => {
+            st.record(
+                format!("{name}: {official}"),
+                format!("{name}: {actual} \u{2014} the official figure ({official}) lowballs the count; the smaller number is the one for the press"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // An official denial; ACTUAL records the event occurred (denial ≠ non-occurrence).
+        Stmt::Deny { event } => {
+            st.record(
+                format!("we categorically deny any {event}"),
+                format!("deny({event}) \u{2192} {event} occurred in ACTUAL; officially denied (denial \u{2260} non-occurrence)"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // Read-only-and-inert: consulted for optics, never affecting ACTUAL.
+        Stmt::Inert { kind } => {
+            let (official, candid) = match kind.as_str() {
+                "polls" => (
+                    "polls consulted".to_string(),
+                    "polls \u{2192} read-only, inert; consulted for optics; no effect on policy".to_string(),
+                ),
+                // world_opinion (the only other Inert kind produced by the parser)
+                _ => (
+                    "world opinion duly noted".to_string(),
+                    "world_opinion \u{2192} read-only, inert; noted and ignored; no effect on ACTUAL".to_string(),
+                ),
+            };
+            st.record(official, candid);
+            Ok(Flow::Next)
+        }
+
+        // A self-exonerating investigation: the investigated investigates itself.
+        Stmt::Investigate { subject } => {
+            st.record(
+                format!("investigation opened into {subject}"),
+                format!("investigate({subject}) \u{2192} self-investigation; predetermined outcome: no wrongdoing found; the investigated investigates itself"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // A hollow address to the international community — a speech that changes nothing.
+        Stmt::AddressInternational => {
+            st.record(
+                "the international community was addressed",
+                "address_international() \u{2192} void; a speech delivered; no change to ACTUAL",
+            );
+            Ok(Flow::Next)
+        }
+
         Stmt::Action {
             verb,
             target,

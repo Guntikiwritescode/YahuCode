@@ -133,6 +133,40 @@ pub fn emit(st: &State) -> String {
     l.join("\n")
 }
 
+/// The `--press` build: the public/press_release view. Shows the OFFICIAL (PUBLIC)
+/// projection and rewrites the source comments through `E` — the honest internal
+/// comment is laundered into the euphemism (#8 comment-rewriting; the rewritten doc
+/// contradicts what the code actually does — docs-contradict-code).
+pub fn press(st: &State, comments: &[String]) -> String {
+    assert_contested_flagged(st);
+    let mut l: Vec<String> = Vec::new();
+    l.push(format!(
+        "@operation(\"{}\")  \u{00b7} press_release build",
+        st.op_name
+    ));
+    l.push(
+        "  \u{250c}\u{2500} press release \u{00b7} OFFICIAL \u{00b7} PUBLIC \u{2500}".to_string(),
+    );
+    for x in project(st, Clearance::Public) {
+        l.push(format!("  \u{2502}   {x}"));
+    }
+    if !comments.is_empty() {
+        l.push(
+            "  \u{251c}\u{2500} source comments, rewritten for the public build (#8) \u{2500}"
+                .to_string(),
+        );
+        for c in comments {
+            let rewritten = crate::euphemism::e(c);
+            l.push(format!("  \u{2502}   # {c}   \u{2192}   # {rewritten}"));
+        }
+    }
+    l.push(
+        "  \u{2514}\u{2500} the honest comment is laundered into the euphemism (docs contradict code)"
+            .to_string(),
+    );
+    l.join("\n")
+}
+
 // ─────────── --json mode (structured goldens: {official, actual, discrepancies}) ───────────
 
 fn json_str(s: &str) -> String {

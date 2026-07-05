@@ -11,11 +11,13 @@
 //! (Phase 2), coalition ops (Phase 3), mossad/undisclosed (Phase 5), and the feature
 //! statements (Phase 6) together with their runtime and emitter handling.
 
-/// A whole program: the mandatory grand operation name (#20) and its top-level body.
+/// A whole program: the mandatory grand operation name (#20), its top-level body, and
+/// any source `# …` comments (kept so the press build can rewrite them, #8).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
     pub op_name: String,
     pub body: Vec<Stmt>,
+    pub comments: Vec<String>,
 }
 
 /// Unary operators.
@@ -232,6 +234,36 @@ pub enum Stmt {
     /// civilian-harm op's exception, never verifies the shield claim, and reassigns
     /// responsibility onto the harmed party. The butt is the excuse's elasticity.
     HumanShields { verb: String, target: String },
+
+    // ─── backlog features (§8), reopened: on-aim government-rhetoric maneuvers ───
+    /// `proportionate(claim);` — a self-certifying "proportionate response" assertion
+    /// that always passes, at any magnitude; no proportionality test is applied.
+    Proportionate { claim: String },
+
+    /// `disputed(name, official, actual);` — a contested figure: the OFFICIAL face
+    /// shows the (lower) press number, the ACTUAL face the real one. The butt is the
+    /// figure-dispute / lowballing maneuver.
+    Disputed {
+        name: String,
+        official: i64,
+        actual: i64,
+    },
+
+    /// `deny(event);` — an official denial. ACTUAL records that the event occurred;
+    /// OFFICIAL categorically denies it (denial ≠ non-occurrence).
+    Deny { event: String },
+
+    /// `world_opinion();` / `polls();` — read-only-and-inert: they can be consulted but
+    /// never affect ACTUAL. The butt is treating them as decorative.
+    Inert { kind: String },
+
+    /// `investigate(subject);` — a self-exonerating investigation: the investigated
+    /// party investigates itself, with a predetermined "no wrongdoing" outcome.
+    Investigate { subject: String },
+
+    /// `address_international();` — a hollow address to the international community; a
+    /// speech that changes nothing (a no-op, like `concern`).
+    AddressInternational,
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,

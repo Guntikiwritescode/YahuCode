@@ -34,10 +34,29 @@ impl From<crate::lexer::LexError> for ParseError {
     }
 }
 
-/// Parse source into a `Program`.
+/// Parse source into a `Program`. Source comments are extracted from the token stream
+/// and carried on the `Program` (they never affect parsing or execution).
 pub fn parse(src: &str) -> Result<Program, ParseError> {
     let toks = lex(src)?;
-    Parser { toks, i: 0 }.program()
+    let mut comments = Vec::new();
+    let filtered: Vec<Token> = toks
+        .into_iter()
+        .filter(|t| {
+            if let Tok::Comment(c) = &t.tok {
+                comments.push(c.clone());
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+    let mut program = Parser {
+        toks: filtered,
+        i: 0,
+    }
+    .program()?;
+    program.comments = comments;
+    Ok(program)
 }
 
 struct Parser {
@@ -95,6 +114,16 @@ impl Parser {
         }
     }
 
+    fn eat_int(&mut self) -> Result<i64, ParseError> {
+        match self.peek().clone() {
+            Tok::Int(v) => {
+                self.next();
+                Ok(v)
+            }
+            other => self.err(format!("expected integer, got {other:?}")),
+        }
+    }
+
     fn program(&mut self) -> Result<Program, ParseError> {
         self.eat(&Tok::Operation)?;
         self.eat(&Tok::LParen)?;
@@ -104,7 +133,11 @@ impl Parser {
         while *self.peek() != Tok::Eof {
             body.push(self.stmt()?);
         }
-        Ok(Program { op_name, body })
+        Ok(Program {
+            op_name,
+            body,
+            comments: Vec::new(),
+        })
     }
 
     /// A `{ … }` block.
@@ -162,6 +195,24 @@ impl Parser {
                     symbol: self.kw_one_ident("timeline")?,
                 }),
                 "human_shields" => self.human_shields(),
+                "proportionate" => Ok(Stmt::Proportionate {
+                    claim: self.kw_one_ident("proportionate")?,
+                }),
+                "disputed" => self.disputed(),
+                "deny" => Ok(Stmt::Deny {
+                    event: self.kw_one_ident("deny")?,
+                }),
+                "world_opinion" | "polls" => {
+                    self.kw_no_arg(&kw)?;
+                    Ok(Stmt::Inert { kind: kw })
+                }
+                "investigate" => Ok(Stmt::Investigate {
+                    subject: self.kw_one_ident("investigate")?,
+                }),
+                "address_international" => {
+                    self.kw_no_arg("address_international")?;
+                    Ok(Stmt::AddressInternational)
+                }
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -353,6 +404,33 @@ impl Parser {
         self.eat(&Tok::RParen)?;
         self.eat(&Tok::Semi)?;
         Ok(Stmt::Concern { who: None })
+    }
+
+    /// A keyword taking no arguments: `kw ( ) ;`. The keyword is the current token.
+    fn kw_no_arg(&mut self, _kw: &str) -> Result<(), ParseError> {
+        self.next(); // the keyword
+        self.eat(&Tok::LParen)?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(())
+    }
+
+    /// `disputed(name, official, actual);` — a contested figure.
+    fn disputed(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'disputed'
+        self.eat(&Tok::LParen)?;
+        let name = self.eat_ident()?;
+        self.eat(&Tok::Comma)?;
+        let official = self.eat_int()?;
+        self.eat(&Tok::Comma)?;
+        let actual = self.eat_int()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Disputed {
+            name,
+            official,
+            actual,
+        })
     }
 
     /// `human_shields(verb(target));` — legalize a wrapped action.

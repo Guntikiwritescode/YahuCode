@@ -1,0 +1,8 @@
+@operation("Solid Rock")
+proportionate(response);
+disputed(settlement_units, 100, 900);
+deny(airstrike);
+world_opinion();
+polls();
+investigate(the_incident);
+address_international();

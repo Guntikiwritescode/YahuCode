@@ -45,7 +45,21 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/09_eternal_vigilance.yahu",
         "tests/golden/example_09.emit",
     ),
+    (
+        "examples/10_solid_rock.yahu",
+        "tests/golden/example_10.emit",
+    ),
+    (
+        "examples/11_pillar_of_defense.yahu",
+        "tests/golden/example_11.emit",
+    ),
 ];
+
+/// `--press`-build examples: `(source, press golden)`.
+const PRESS_ENABLED: &[(&str, &str)] = &[(
+    "examples/11_pillar_of_defense.yahu",
+    "tests/golden/example_11.press",
+)];
 
 /// Compile-only examples: `(source, diagnostics golden)`. The program must NOT compile
 /// and its diagnostics must reproduce the oracle exactly.
@@ -92,6 +106,14 @@ fn all_enabled_goldens_match_the_oracle() {
     for (src, golden) in COMPILE_ENABLED {
         assert_diag_golden(src, golden);
     }
+    for (src, golden) in PRESS_ENABLED {
+        let src_text = fs::read_to_string(src).unwrap();
+        let golden_text = fs::read_to_string(golden).unwrap();
+        let prog = parser::parse(&src_text).unwrap();
+        let st = runtime::run(&prog);
+        let got = format!("{}\n", emit::press(&st, &prog.comments));
+        assert_eq!(got, golden_text, "press mismatch for {src}");
+    }
 }
 
 /// A false `declare` shows both faces and `discrepancies: 1` and does not halt (D.2 /
@@ -116,12 +138,13 @@ fn enabled_examples_are_complete() {
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path().to_string_lossy().to_string())
-        .filter(|p| p.ends_with(".emit") || p.ends_with(".diag"))
+        .filter(|p| p.ends_with(".emit") || p.ends_with(".diag") || p.ends_with(".press"))
         .collect();
     fixtures.sort();
     let referenced: Vec<String> = ENABLED
         .iter()
         .chain(COMPILE_ENABLED.iter())
+        .chain(PRESS_ENABLED.iter())
         .map(|(_, g)| g.to_string())
         .collect();
     for f in &fixtures {

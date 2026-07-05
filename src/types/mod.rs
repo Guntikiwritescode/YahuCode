@@ -121,7 +121,13 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::Access { .. }
             | Stmt::Timeline { .. }
             | Stmt::EstablishCommission { .. }
-            | Stmt::Settlement { .. } => {}
+            | Stmt::Settlement { .. }
+            | Stmt::Proportionate { .. }
+            | Stmt::Disputed { .. }
+            | Stmt::Deny { .. }
+            | Stmt::Inert { .. }
+            | Stmt::Investigate { .. }
+            | Stmt::AddressInternational => {}
         }
     }
 }
@@ -167,7 +173,13 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Timeline { .. }
                 | Stmt::EstablishCommission { .. }
                 | Stmt::Settlement { .. }
-                | Stmt::HumanShields { .. } => {}
+                | Stmt::HumanShields { .. }
+                | Stmt::Proportionate { .. }
+                | Stmt::Disputed { .. }
+                | Stmt::Deny { .. }
+                | Stmt::Inert { .. }
+                | Stmt::Investigate { .. }
+                | Stmt::AddressInternational => {}
             }
         }
     }
@@ -269,7 +281,13 @@ fn check_disclosure(
             | Stmt::Timeline { .. }
             | Stmt::EstablishCommission { .. }
             | Stmt::Settlement { .. }
-            | Stmt::HumanShields { .. } => {}
+            | Stmt::HumanShields { .. }
+            | Stmt::Proportionate { .. }
+            | Stmt::Disputed { .. }
+            | Stmt::Deny { .. }
+            | Stmt::Inert { .. }
+            | Stmt::Investigate { .. }
+            | Stmt::AddressInternational => {}
         }
     }
 }
