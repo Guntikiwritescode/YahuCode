@@ -683,6 +683,47 @@ address(domestic) { one_sided; }"#);
 }
 
 #[test]
+fn feature_b_return_in_arm_exits_arm_not_program() {
+    // A `return` inside a poly-statement arm exits the ARM (like a function body), and
+    // execution continues after the invoke — it must NOT unwind and halt the program.
+    let st = run(r#"@operation("Protective Edge")
+statement s { to domestic { announce "arm"; return; announce "dead"; } }
+address(domestic) { s; announce "after invoke"; }
+announce "after address";"#);
+    let out = official(&st);
+    assert!(
+        out.contains("after invoke"),
+        "execution must resume after the invoke: {out}"
+    );
+    assert!(
+        out.contains("after address"),
+        "and continue at top level: {out}"
+    );
+    assert!(
+        !out.contains("dead"),
+        "code after `return` in the arm must not run: {out}"
+    );
+    assert!(!st.ended_by_elections);
+}
+
+#[test]
+fn feature_b_poly_arm_does_not_bypass_the_gate() {
+    // A classified op inside a poly arm defined in a mossad/hasbara scope still runs
+    // UNGATED at the invoke site → E-UNGATED. A poly arm is a deferred, fresh-scope body
+    // (like a function), so defining it in a gated scope cannot smuggle the op past the
+    // gate onto the PUBLIC face.
+    let ds = diags(
+        r#"@operation("Protective Edge")
+mossad { statement m_strike { to domestic { strike(target); } } }
+address(domestic) { m_strike; }"#,
+    );
+    assert!(
+        any_diag_contains(&ds, "E-UNGATED"),
+        "a poly arm must not smuggle a classified op past the gate: {ds:?}"
+    );
+}
+
+#[test]
 fn feature_b_doubletalk_is_syntactic_different_arms_vs_same_arm() {
     // B-5: W-DOUBLETALK is syntactic — flagged when ≥2 distinct arms are taken, NOT a
     // semantic contradiction analysis.

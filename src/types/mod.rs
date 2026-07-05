@@ -342,12 +342,15 @@ fn check_gate(
             }
             Stmt::While { body, .. } => check_gate(body, gated, funcs, law, diags),
             Stmt::FuncDef { body, .. } => check_gate(body, false, funcs, law, diags),
-            // Feature B — an `address` block and each poly-statement arm are ordinary
-            // blocks for gating (a classified action inside still needs a gate/scope).
+            // Feature B — an `address` block runs inline, so it keeps the current gate
+            // context. A poly-statement is a DEFERRED definition invoked from an arbitrary
+            // context (like a `FuncDef`): its arms start a fresh UNGATED scope, so defining
+            // one inside a hasbara/mossad cannot smuggle a classified op past the gate at
+            // the invoke site. (The disclosure pass already scopes arms this way.)
             Stmt::Address { body, .. } => check_gate(body, gated, funcs, law, diags),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
-                    check_gate(body, gated, funcs, law, diags);
+                    check_gate(body, false, funcs, law, diags);
                 }
             }
             Stmt::ExprStmt(Expr::Call { name, .. }) => {

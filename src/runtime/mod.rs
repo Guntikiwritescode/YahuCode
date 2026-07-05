@@ -659,8 +659,13 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
         Stmt::Postpone => {
             // A turn passes; upkeep is projected before it is charged (matching the
-            // oracle's rendering) and then `tick` charges it.
-            let projected = st.core - st.config.upkeep_per_alloc * st.allocations.len() as i64;
+            // oracle's rendering) and then `tick` charges it. Saturating, like `bribe`, so
+            // a coalition ledger already at an extreme can't overflow into a host panic.
+            let projected = st.core.saturating_sub(
+                st.config
+                    .upkeep_per_alloc
+                    .saturating_mul(st.allocations.len() as i64),
+            );
             st.record(
                 "matter deferred",
                 format!("postpone() \u{2014} a turn passes (core={projected} after upkeep)"),
@@ -683,7 +688,12 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 /// `elections` — the only in-world halt (invariant I6). Charged per `postpone` in v1.
 fn tick(st: &mut State) {
     if !st.allocations.is_empty() {
-        st.core -= st.config.upkeep_per_alloc * st.allocations.len() as i64;
+        // Saturating (matching `bribe`/`postpone`) — never a host panic on overflow (§12).
+        st.core = st.core.saturating_sub(
+            st.config
+                .upkeep_per_alloc
+                .saturating_mul(st.allocations.len() as i64),
+        );
     }
     st.turn += 1;
     if st.core <= 0 && !st.ended_by_elections {
@@ -826,7 +836,11 @@ fn invoke(name: &str, st: &mut State) -> ExecResult {
             st.doubletalk_log.push((name.to_string(), idx));
             let flow = exec_block(&arms[idx].1, st);
             st.leave_call();
-            flow
+            // An arm is invoked like a function body, so a `return` inside it exits the
+            // ARM and execution continues after the invoke — it must NOT unwind past the
+            // invoke and halt the program (cf. `call_function`, which bounds the Return).
+            flow?;
+            Ok(Flow::Next)
         }
         // No arm for this room: the government simply said nothing to them. Not an error.
         None => Ok(Flow::Next),

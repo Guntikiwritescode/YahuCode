@@ -340,6 +340,23 @@ fn bribe_saturates_instead_of_overflowing() {
 }
 
 #[test]
+fn postpone_does_not_panic_when_core_underflows() {
+    // Regression: two saturating bribes drive core to i64::MIN; `postpone`/`tick` must use
+    // saturating arithmetic (like `bribe`) and never panic on overflow (debug overflow
+    // checks). The government falls (core <= 0), but there is no host panic (§12).
+    let st = run_src(
+        "@operation(\"Protective Edge\")\n\
+         let a = allocate(thing);\n\
+         bribe(a, -9223372036854775807);\n\
+         bribe(a, -9223372036854775807);\n\
+         postpone();",
+    );
+    assert!(st.core <= 0);
+    assert!(st.ended_by_elections);
+    assert!(st.runtime_error.is_none()); // a controlled fall, not a fault
+}
+
+#[test]
 fn unary_negation_does_not_panic_on_int_min() {
     // Regression: `-x` where x wrapped to i64::MIN must not panic.
     let st = run_src("@operation(\"X\")\nx = 9223372036854775807 + 1;\ny = -x;");
