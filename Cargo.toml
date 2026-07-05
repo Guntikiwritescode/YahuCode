@@ -1,0 +1,23 @@
+[package]
+name = "yahucode"
+version = "0.1.0"
+edition = "2021"
+description = "YahuCode — a satirical esoteric programming language whose subject is the messaging apparatus and wartime conduct of the Israeli government (the government and its rhetoric, never a people)."
+license = "MIT"
+publish = false
+
+# Dependency-free by design: a clean, fast, warning-free build. The primary
+# defense against unhandled-case bugs is the host language's exhaustive `match`
+# over closed sum types (see docs/cc-handoff.md §12, Appendix H), not a crate.
+
+[[bin]]
+name = "yahucode"
+path = "src/main.rs"
+
+[lib]
+name = "yahucode"
+path = "src/lib.rs"
+
+[profile.test]
+# Invariant assertions (I1–I8) must be live in test/debug builds (§13).
+debug-assertions = true

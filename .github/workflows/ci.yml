@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup component add rustfmt clippy
+      - name: Format check
+        run: cargo fmt --check
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test (all four suites; invariant assertions live in debug builds)
+        run: cargo test
+      - name: Build (release, warning-free)
+        run: cargo build --release
+        env:
+          RUSTFLAGS: "-D warnings"
