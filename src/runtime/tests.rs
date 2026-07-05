@@ -175,6 +175,25 @@ fn bribe_tops_up_core() {
 }
 
 #[test]
+fn runtime_fault_trace_is_redacted_on_the_public_face() {
+    // #21: the OFFICIAL trace reads `at ████ (████:██)`; only סודי sees the real fault.
+    let st = run_src("@operation(\"Iron Wall\")\ny = 1 / 0;");
+    let ev = st.log.last().unwrap();
+    assert!(
+        ev.official.contains('\u{2588}'),
+        "public trace must be redacted"
+    );
+    assert!(
+        !ev.official.contains("division"),
+        "public trace must not leak the fault"
+    );
+    assert!(
+        ev.candid.contains("division by zero"),
+        "candid trace exposes the real fault"
+    );
+}
+
+#[test]
 fn step_budget_stops_runaway_loops() {
     let cfg = RuntimeConfig {
         max_steps: 1000,

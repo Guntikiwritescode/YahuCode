@@ -102,6 +102,12 @@ pub fn run(program: &Program) -> State {
 pub fn run_with_config(program: &Program, config: RuntimeConfig) -> State {
     let mut st = State::new(program.op_name.clone(), config);
     if let Err(e) = exec_block(&program.body, &mut st) {
+        // #21 — redacted stack traces: the OFFICIAL trace is fully redacted
+        // (`at ████ (████:██)`); only סודי-cleared readers see the real fault.
+        st.log.push(Event::public(
+            "runtime trace: at \u{2588}\u{2588}\u{2588}\u{2588} (\u{2588}\u{2588}\u{2588}\u{2588}:\u{2588}\u{2588})",
+            format!("runtime fault: {}", e.0),
+        ));
         st.runtime_error = Some(e.0);
     }
     st

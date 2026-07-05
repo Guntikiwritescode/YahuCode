@@ -11,7 +11,7 @@
 
 use std::fs;
 
-use yahucode::{emit, parser, runtime};
+use yahucode::{emit, parser, runtime, types};
 
 /// Every example enabled so far, as `(source, golden)` pairs. Grows per PR until all
 /// nine oracle examples are covered (PR6).
@@ -30,6 +30,13 @@ const ENABLED: &[(&str, &str)] = &[
     ),
 ];
 
+/// Compile-only examples: `(source, diagnostics golden)`. The program must NOT compile
+/// and its diagnostics must reproduce the oracle exactly.
+const COMPILE_ENABLED: &[(&str, &str)] = &[(
+    "examples/01_compiler_refuses.yahu",
+    "tests/golden/example_01.diag",
+)];
+
 fn assert_emit_golden(src_path: &str, golden_path: &str) {
     let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
     let golden =
@@ -42,10 +49,31 @@ fn assert_emit_golden(src_path: &str, golden_path: &str) {
     assert_eq!(got, golden, "emit mismatch for {src_path}");
 }
 
+fn assert_diag_golden(src_path: &str, golden_path: &str) {
+    let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
+    let golden =
+        fs::read_to_string(golden_path).unwrap_or_else(|e| panic!("read {golden_path}: {e}"));
+    let prog = parser::parse(&src).unwrap_or_else(|e| panic!("parse {src_path}: {e}"));
+    let diags = types::check(&prog);
+    assert!(!diags.is_empty(), "{src_path} should not compile");
+    let got = format!("{}\n", diags.join("\n"));
+    assert_eq!(got, golden, "diagnostic mismatch for {src_path}");
+}
+
 #[test]
 fn all_enabled_goldens_match_the_oracle() {
     for (src, golden) in ENABLED {
         assert_emit_golden(src, golden);
+        // Every runnable golden must also compile clean (no diagnostics).
+        let src_text = fs::read_to_string(src).unwrap();
+        let prog = parser::parse(&src_text).unwrap();
+        assert!(
+            types::check(&prog).is_empty(),
+            "{src} unexpectedly produced diagnostics"
+        );
+    }
+    for (src, golden) in COMPILE_ENABLED {
+        assert_diag_golden(src, golden);
     }
 }
 
@@ -74,7 +102,11 @@ fn enabled_examples_are_complete() {
         .filter(|p| p.ends_with(".emit") || p.ends_with(".diag"))
         .collect();
     fixtures.sort();
-    let referenced: Vec<String> = ENABLED.iter().map(|(_, g)| g.to_string()).collect();
+    let referenced: Vec<String> = ENABLED
+        .iter()
+        .chain(COMPILE_ENABLED.iter())
+        .map(|(_, g)| g.to_string())
+        .collect();
     for f in &fixtures {
         assert!(
             referenced.contains(f),

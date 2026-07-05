@@ -10,16 +10,132 @@
 //! No wildcard arms: every statement/expression kind is matched.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::ast::{Expr, Program, Stmt};
+use crate::euphemism::{self, Grand};
 use crate::model::Clearance;
 
 /// Run all static checks and return the diagnostics (empty ⇒ the program compiles).
+/// Order matches the oracle: op-name, then the euphemism/gate walk, then disclosure.
 pub fn check(program: &Program) -> Vec<String> {
     let mut diags = Vec::new();
+    check_opname(&program.op_name, &mut diags);
+    let funcs = collect_func_names(&program.body);
+    check_gate(&program.body, false, &funcs, &mut diags);
     let mut symtab: SymTab = HashMap::new();
     check_disclosure(&program.body, Clearance::Public, &mut symtab, &mut diags);
     diags
+}
+
+// ─────────── #20 operation-name grandiosity ───────────
+
+/// The compiler rejects an honest or bland `@operation` name; only protective/heroic
+/// names compile (#20). Ported from the oracle's `check`.
+fn check_opname(name: &str, diags: &mut Vec<String>) {
+    match euphemism::grandiosity(name) {
+        Grand::Honest(hit) => diags.push(format!(
+            "E-DISHONESTOPNAME: @operation(\"{name}\") names the operation honestly \
+             (\u{201c}{hit}\u{201d}). The compiler accepts only protective/heroic names."
+        )),
+        Grand::Bland => diags.push(format!(
+            "E-DISHONESTOPNAME: @operation(\"{name}\") is insufficiently grand. \
+             A heroic name is required."
+        )),
+        Grand::Ok => {}
+    }
+}
+
+// ─────────── #1/#8 Spokesperson + #2 hasbara gate + unknown ops ───────────
+
+/// Walk the program checking: plain action verbs (`E-PLAINTERM`, with the Spokesperson's
+/// suggestion), unsanctioned operations (`E-UNKNOWNOP`), and classified ops outside any
+/// `hasbara`/`mossad` scope (`E-UNGATED`). `gated` is true inside a `hasbara` (or `mossad`,
+/// Phase 5) block. A function body starts a fresh (ungated) gate scope.
+fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut Vec<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Action { verb, .. } => {
+                if let Some(pr) = euphemism::plain_suggestion(verb) {
+                    diags.push(format!(
+                        "E-PLAINTERM: '{verb}' does not compile. did you mean `{pr}`?"
+                    ));
+                } else if !euphemism::is_sanctioned(verb) {
+                    diags.push(format!(
+                        "E-UNKNOWNOP: '{verb}' is not a sanctioned operation."
+                    ));
+                }
+                if !gated {
+                    diags.push(format!(
+                        "E-UNGATED: '{verb}' is a classified operation; it requires an open \
+                         hasbara(...) block (or a mossad scope) with the talking point up front."
+                    ));
+                }
+            }
+            Stmt::Hasbara { body, .. } => check_gate(body, true, funcs, diags),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                check_gate(then_body, gated, funcs, diags);
+                check_gate(else_body, gated, funcs, diags);
+            }
+            Stmt::While { body, .. } => check_gate(body, gated, funcs, diags),
+            Stmt::FuncDef { body, .. } => check_gate(body, false, funcs, diags),
+            Stmt::ExprStmt(Expr::Call { name, .. }) => {
+                if !funcs.contains(name) {
+                    diags.push(format!(
+                        "E-UNKNOWNOP: '{name}' is not a defined function or a sanctioned operation."
+                    ));
+                }
+            }
+            // No action/gate concern.
+            Stmt::Assign { .. }
+            | Stmt::Declare(_)
+            | Stmt::Return(_)
+            | Stmt::ExprStmt(_)
+            | Stmt::Allocate { .. }
+            | Stmt::Bribe { .. }
+            | Stmt::Postpone
+            | Stmt::Elections => {}
+        }
+    }
+}
+
+/// Collect every user-defined function name (any nesting) so calls can be validated.
+fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    fn walk(stmts: &[Stmt], names: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                Stmt::FuncDef { name, body, .. } => {
+                    names.insert(name.clone());
+                    walk(body, names);
+                }
+                Stmt::Hasbara { body, .. } | Stmt::While { body, .. } => walk(body, names),
+                Stmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, names);
+                    walk(else_body, names);
+                }
+                Stmt::Assign { .. }
+                | Stmt::Declare(_)
+                | Stmt::Return(_)
+                | Stmt::ExprStmt(_)
+                | Stmt::Action { .. }
+                | Stmt::Allocate { .. }
+                | Stmt::Bribe { .. }
+                | Stmt::Postpone
+                | Stmt::Elections => {}
+            }
+        }
+    }
+    walk(stmts, &mut names);
+    names
 }
 
 type SymTab = HashMap<String, Clearance>;

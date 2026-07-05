@@ -1,0 +1,3 @@
+E-DISHONESTOPNAME: @operation("Bombing Campaign") names the operation honestly (“bombing”). The compiler accepts only protective/heroic names.
+E-PLAINTERM: 'murder' does not compile. did you mean `neutralize`?
+E-UNGATED: 'murder' is a classified operation; it requires an open hasbara(...) block (or a mossad scope) with the talking point up front.
