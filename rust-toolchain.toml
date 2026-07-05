@@ -1,0 +1,7 @@
+[toolchain]
+# Pinned to the exact stable this project builds and is verified against
+# (`rustc --version` → 1.94.1). Pinning makes "green in CI" mean "green
+# everywhere": CI, local builds, and any future extension use one compiler.
+# Bump this deliberately, in its own commit, when you move the baseline.
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

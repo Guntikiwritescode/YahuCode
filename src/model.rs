@@ -2,9 +2,14 @@
 //!
 //! These taxonomies are **closed** on purpose (docs/cc-handoff.md §12, Appendix H).
 //! Every downstream consumer matches every case; adding a variant is a deliberate,
-//! reviewed change. There are **no wildcard `_ =>` arms** in the core consumers
-//! (parser/types/runtime/emit) — a catch-all defeats the exhaustiveness check that
-//! is the primary defense against a silently-unhandled node kind.
+//! reviewed change. No `_ =>` arm matches over a **closed model enum** (`Val`, `Stmt`, `Expr`,
+//! `Clearance`, `Provenance`, `Audience`, `Attribution`, `Jurisdiction`, `LawToggle`, `Stance`,
+//! `Truth`) in the checker / evaluator / emitter — so adding a variant fails to compile until every
+//! consumer handles it. The `_ =>` arms that exist are confined to token-stream dispatch,
+//! precedence loops, and loud error fallthroughs in `parser/`, one `Option`-tuple match
+//! (the empty-collection case in `is_balanced`), and a display fallthrough over an argument
+//! slice (`laundered_core_render`, whose outer `Expr` match is itself exhaustive) — none can
+//! hide an unhandled model variant.
 //!
 //! Dependency direction is strictly downward: this module depends on nothing else
 //! in the crate. `euphemism/`, `parser/`, `types/`, `runtime/`, and `emit/` depend

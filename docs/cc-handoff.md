@@ -843,7 +843,7 @@ type node = { kind : node_kind; actual : actual; official : official;
               clearance : clearance; provenance : provenance; children : node list; span : span }
 ```
 
-OCaml's pattern matching warns (configure the build to treat the warning as an error) on a non-exhaustive match, giving the same guarantee. Again: no wildcard arms in the core consumers.
+OCaml's pattern matching warns (configure the build to treat the warning as an error) on a non-exhaustive match, giving the same guarantee. Again: no wildcard arm over a closed model type in the core consumers (checker/evaluator/emitter) — the arms that do exist match over token streams or helper tuples/slices, never a closed model enum.
 
 The `RuntimeConfig` (initial `core`, `upkeep`, `INIT_ALLOC_BALANCE`, grandiosity threshold, spike defaults 3 / 1 / …) is a plain record with named fields and defaults — never inline constants (§12).
 

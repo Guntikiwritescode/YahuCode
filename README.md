@@ -41,8 +41,8 @@ Requires a stable Rust toolchain (developed against 1.94). See
 Rust — its `match` is exhaustive by default, which is the project's primary defense
 against unhandled-case bugs (`docs/cc-handoff.md` §12, Appendix H). The core
 taxonomies (clearance, provenance, truth, node kinds, value payloads) are **closed
-sum types** matched exhaustively everywhere; there are no wildcard `_ =>` arms in the
-core consumers.
+sum types**, and no `_ =>` arm matches over one of them in the checker, evaluator, or
+emitter — so adding a variant fails to compile until every consumer handles it.
 
 ## Repository layout
 
