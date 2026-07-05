@@ -15,6 +15,13 @@
 /// (guardrail G1) — never the butt of the joke.
 pub const SODI: &str = "\u{05e1}\u{05d5}\u{05d3}\u{05d9}";
 
+/// The sentinel rendered on the `ACTUAL` face of a narrative-only (`announce`) statement
+/// (Feature A, handoff §7.3). A single source of truth — the golden fixtures pin it and
+/// the I9 assertion checks it; it must never be inlined elsewhere (§13, A-4). Its
+/// presence is *vacuity*, not a secret: no clearance, not even `סודי`, recovers an
+/// `ACTUAL` under an announced claim (there is no `E⁻¹`, invariant I9).
+pub const UNAVAILABLE: &str = "[UNAVAILABLE \u{2014} no one has said what this actually does]";
+
 /// The clearance lattice — which **is** the type system (handoff §7.3). A value's
 /// type is *who may see it*, not int/string/struct. A type error is a disclosure.
 ///
@@ -37,14 +44,65 @@ impl Clearance {
     }
 }
 
-// NOTE on invariant I2 (lossy asymmetry): the handoff models it with a `Provenance`
-// tag (`AuthoredOfficial ⇒ actual = Unavailable`). In v1 there is no surface syntax to
-// author the OFFICIAL face directly — that is the Phase-7 bidirectional pane, out of
-// scope — so no `AuthoredOfficial` value can ever arise, and a `Provenance` field would
-// be dead scaffolding. I2 is instead enforced structurally: `E` is one-way and
-// non-injective (there is no `E⁻¹`; see the euphemism module and the I2 property test),
-// and the surface only ever authors in the candid register. A `Provenance` tag would be
-// reintroduced with the Phase-7 authoring surface if that is ever built.
+/// How a logged event's two faces arose (Feature A, handoff §7.3, invariants I2/I9).
+///
+/// Reintroduced from the model's Phase-7 note now that the authoring surface (`announce`)
+/// exists — it is **load-bearing**, not dead scaffolding (§13, A-3): the emitter reads it
+/// to enforce I9 (the vacuity asymmetry) and it distinguishes a *secret* (`Covert` — an
+/// `ACTUAL` exists, `סודי`-gated) from a *lie* (`AuthoredOfficial` — no `ACTUAL` ever
+/// existed, and no clearance recovers one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Provenance {
+    /// The candid register: `ACTUAL` was authored; the `OFFICIAL` face derives via `E`.
+    AuthoredActual,
+    /// The official authoring register (`announce`): only the `OFFICIAL` face exists;
+    /// `ACTUAL` is `UNAVAILABLE`, permanently, at every clearance (I9). No `E⁻¹`.
+    AuthoredOfficial,
+    /// A covert (`mossad`) record: an `ACTUAL` exists but is `סודי`-gated (a secret).
+    Covert,
+}
+
+/// The audience register (Feature B, handoff §8): the *political room a government is
+/// addressing*, never an ethnic/national/religious identity group (guardrail G1). A
+/// **closed** set matched exhaustively; adding a room is a deliberate, compiler-enforced
+/// change (§13, B-1). `Record` is the default — "no specific room", i.e. the out-of-world
+/// log that the emitter's vantage sees in full.
+///
+/// Orthogonal to `Clearance` (§13, B-2): a reader has a clearance *and* stands in a room;
+/// the two are never conflated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Audience {
+    /// The domestic-political room (harder-line messaging, per the anchor).
+    Domestic,
+    /// The international-diplomatic room (the prettier, moderate face, per the anchor).
+    International,
+    /// The default: no specific room — the out-of-world record.
+    Record,
+}
+
+/// The attribution effect on a result (Feature C, handoff §9): who an action is
+/// traceable to, or that it is publicly deniable. `Traceable` carries the **ordered real
+/// chain** — nearest proxy first, the true origin last. Laundering only ever *prepends*
+/// (invariant I11); no operation shortens a chain or removes the origin.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Attribution {
+    /// Attributable along this chain (nearest proxy first, true origin last).
+    Traceable(Vec<String>),
+    /// Publicly deniable — "neither confirm nor deny" to the uncleared. The real chain
+    /// is retained separately (never on the public face; the `סודי` view keeps it).
+    Deniable,
+}
+
+/// One entry in the `סודי`-only, legislation-proof meta-ledger (Feature D, handoff §10.3,
+/// invariant I12): a record of a runtime rule-change. Append-only; **no toggle removes
+/// it** — there is no fully-clean fixed point. Rendered only to `סודי`/out-of-world.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetaEntry {
+    /// What the `legislate` changed (the toggle, rendered).
+    pub change: String,
+    /// The turn on which the rule-change was made.
+    pub turn: u64,
+}
 
 /// The three-valued truth used by `declare` and by mossad's contagion (handoff §7.6).
 /// `Undisclosed` is produced only inside `mossad` and is **absorbing** there.
@@ -126,15 +184,28 @@ pub struct Event {
     /// Sensitive-feature framing (invariant I8). Rendered in a dedicated section so
     /// the butt stays on the maneuver, never the victims.
     pub note: Option<String>,
+    /// How the two faces arose (Feature A, I2/I9). `AuthoredOfficial ⇒ candid =
+    /// UNAVAILABLE`, permanently.
+    pub provenance: Provenance,
+    /// The room this was said to (Feature B, I10). `Record` unless inside an `address`.
+    pub audience: Audience,
+    /// The deniability effect (Feature C). `None` for ordinary events (they carry no
+    /// attribution dimension); `Some` only for laundering (`via`) and `blame`.
+    pub attribution: Option<Attribution>,
 }
 
 impl Event {
+    /// A plain PUBLIC, candid-register event with no framing/audience/attribution — the
+    /// shape used by system records (elections, the redacted runtime trace).
     pub fn public(official: impl Into<String>, candid: impl Into<String>) -> Self {
         Event {
             official: official.into(),
             candid: candid.into(),
             clearance: Clearance::Public,
             note: None,
+            provenance: Provenance::AuthoredActual,
+            audience: Audience::Record,
+            attribution: None,
         }
     }
 }

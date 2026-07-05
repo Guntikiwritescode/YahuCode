@@ -53,6 +53,11 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/11_pillar_of_defense.yahu",
         "tests/golden/example_11.emit",
     ),
+    // Feature A (§7) — the announce register: OFFICIAL-only, ACTUAL is UNAVAILABLE (D.1).
+    (
+        "examples/12_dawn_of_calm.yahu",
+        "tests/golden/example_12.emit",
+    ),
 ];
 
 /// `--press`-build examples: `(source, press golden)`.

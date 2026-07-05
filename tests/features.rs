@@ -6,7 +6,7 @@
 //! long rendered strings; exact structural facts (counts, flags, env values) are
 //! asserted precisely.
 
-use yahucode::model::{Clearance, Val};
+use yahucode::model::{Clearance, Provenance, Val, UNAVAILABLE};
 use yahucode::runtime::{self, State};
 use yahucode::{emit, parser, types};
 
@@ -579,12 +579,80 @@ x = 1 / 0;"#);
 
 #[test]
 fn feature_21_redacted_trace_negative_sodi_sees_real() {
-    // σودי-cleared readers see the real fault behind the redaction.
+    // σודי-cleared readers see the real fault behind the redaction.
     let st = run(r#"@operation("Iron Wall")
 x = 1 / 0;"#);
     assert!(
         actual(&st).contains("division by zero"),
         "actual: {}",
         actual(&st)
+    );
+}
+
+// ─────────── A. announce / lossy authoring (Feature A, §7) ───────────
+
+#[test]
+fn feature_a_announce_positive_official_only_actual_unavailable() {
+    // An all-announce program: the OFFICIAL face carries the announced texts, the ACTUAL
+    // face is the UNAVAILABLE sentinel per line, and there are zero discrepancies.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "humanitarian access has been fully restored";
+announce "all measures are proportionate and lawful";"#);
+    assert!(
+        official(&st).contains("humanitarian access has been fully restored"),
+        "official: {}",
+        official(&st)
+    );
+    assert_eq!(
+        actual(&st),
+        format!("{UNAVAILABLE}\n{UNAVAILABLE}"),
+        "every ACTUAL line must be the UNAVAILABLE sentinel"
+    );
+    assert_eq!(st.discrepancy_count(), 0);
+}
+
+#[test]
+fn feature_a_announce_negative_immunity_not_over_applied() {
+    // Immunity is NOT over-applied: a real, false `declare` about genuine ACTUAL state
+    // still logs its discrepancy even when announcements sit around it. Announce is
+    // immune *by construction* (it never touches the ledger); it does not immunize
+    // declares about real state.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "everything is fine";
+casualties = 100;
+declare(casualties == 0);
+announce "no one was harmed";"#);
+    assert_eq!(
+        st.discrepancy_count(),
+        1,
+        "the real false declare must still count exactly once"
+    );
+}
+
+#[test]
+fn feature_a_provenance_is_load_bearing_and_no_inverse() {
+    // A-1/A-3: an announce node is AuthoredOfficial with the sentinel as its candid (no
+    // `E⁻¹`); a candid action is AuthoredActual. The tag is set at construction and read.
+    let st = run(r#"@operation("Dawn of Calm")
+announce "the situation is under control";
+hasbara("x") { neutralize(target); }"#);
+    let announced = st
+        .log
+        .iter()
+        .find(|e| e.provenance == Provenance::AuthoredOfficial)
+        .expect("an AuthoredOfficial event");
+    assert_eq!(
+        announced.candid, UNAVAILABLE,
+        "A-1: no reconstructed ACTUAL"
+    );
+    let action = st
+        .log
+        .iter()
+        .find(|e| e.candid.contains("murder"))
+        .expect("the candid action");
+    assert_eq!(
+        action.provenance,
+        Provenance::AuthoredActual,
+        "a candid op is AuthoredActual"
     );
 }

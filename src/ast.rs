@@ -271,6 +271,13 @@ pub enum Stmt {
     /// `address_international();` — a hollow address to the international community; a
     /// speech that changes nothing (a no-op, like `concern`).
     AddressInternational,
+
+    // ─── Feature A (§7): bidirectional / lossy authoring ───
+    /// `announce "…";` — the official authoring register. Writes only the `OFFICIAL`
+    /// face; the `ACTUAL` face is `UNAVAILABLE`, permanently (no `E⁻¹`, I9). Born with
+    /// `Provenance::AuthoredOfficial`. Narrative-only: it never touches the discrepancy
+    /// ledger, so a claim about pure narrative cannot generate a discrepancy (§7.4).
+    Announce { text: String },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,

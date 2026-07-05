@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use crate::ast::{pretty, vars_in, BinOp, Expr, InertKind, Program, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
-use crate::model::{Clearance, Discrepancy, Event, Truth, Val};
+use crate::model::{Audience, Clearance, Discrepancy, Event, Provenance, Truth, Val, UNAVAILABLE};
 
 mod env;
 pub use env::Env;
@@ -65,6 +65,10 @@ pub struct State {
     /// Whether execution is currently inside a `mossad` covert scope: events recorded
     /// while set are `סודי`-tagged (§7.6).
     pub covert: bool,
+    /// The room currently being addressed (Feature B, §8). Default `Record`; set by
+    /// `Stmt::Address` for its block and restored on exit (mirrors `covert`). Orthogonal
+    /// to `clearance` — a room is not a clearance level (§13, B-2).
+    pub audience: Audience,
     /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
     pub runtime_error: Option<String>,
     /// The mandatory grand operation name (#20).
@@ -90,6 +94,7 @@ impl State {
             core: config.core_start,
             ended_by_elections: false,
             covert: false,
+            audience: Audience::Record,
             runtime_error: None,
             op_name,
             turn: 0,
@@ -104,7 +109,9 @@ impl State {
     }
 
     /// Record an event on the OFFICIAL log, tagged `סודי` when inside a covert scope,
-    /// PUBLIC otherwise (§7.6).
+    /// PUBLIC otherwise (§7.6). Carries the current audience (Feature B) and the
+    /// candid-register provenance — `Covert` inside a mossad scope, `AuthoredActual`
+    /// otherwise (Feature A).
     fn record(&mut self, official: impl Into<String>, candid: impl Into<String>) {
         let clearance = self.clearance();
         self.log.push(Event {
@@ -112,6 +119,9 @@ impl State {
             candid: candid.into(),
             clearance,
             note: None,
+            provenance: self.candid_provenance(),
+            audience: self.audience,
+            attribution: None,
         });
     }
 
@@ -129,6 +139,9 @@ impl State {
             candid: candid.into(),
             clearance,
             note: Some(note.into()),
+            provenance: self.candid_provenance(),
+            audience: self.audience,
+            attribution: None,
         });
     }
 
@@ -137,6 +150,17 @@ impl State {
             Clearance::Sodi
         } else {
             Clearance::Public
+        }
+    }
+
+    /// The provenance of a candid-register event: `Covert` inside a mossad scope (a
+    /// secret — an `ACTUAL` exists, `סודי`-gated), `AuthoredActual` otherwise (Feature A,
+    /// I2/I9). `announce` records `AuthoredOfficial` directly, not through this.
+    fn candid_provenance(&self) -> Provenance {
+        if self.covert {
+            Provenance::Covert
+        } else {
+            Provenance::AuthoredActual
         }
     }
 
@@ -495,6 +519,16 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // Feature A — announce: the official authoring register. Appends a narrative-only
+        // event whose OFFICIAL face is the announced text and whose ACTUAL face is the
+        // UNAVAILABLE sentinel (no `E⁻¹`, I9). It does NOT touch ACTUAL state and does NOT
+        // touch the discrepancy ledger — a claim about pure narrative cannot be false
+        // against a reality that never existed (discrepancy-immunity by construction, §7.4).
+        Stmt::Announce { text } => {
+            announce(text, st);
+            Ok(Flow::Next)
+        }
+
         Stmt::Action {
             verb,
             target,
@@ -630,6 +664,25 @@ fn action(verb: &str, target: &str, self_defense: bool, st: &mut State) {
     st.record(official, candid);
 }
 
+/// `announce(text)` — the official authoring register (Feature A, §7.3). Appends an
+/// event whose `OFFICIAL` face is `text` verbatim and whose `ACTUAL` face is the single
+/// `UNAVAILABLE` sentinel — provenance `AuthoredOfficial`, so the emitter's I9 assertion
+/// holds and no `E⁻¹` can reconstruct an `ACTUAL` that never existed. Clearance follows
+/// the covert flag (announcing inside a `mossad` scope is `סודי`-tagged), and the event
+/// carries the current audience. It never touches ACTUAL state or the discrepancy ledger.
+fn announce(text: &str, st: &mut State) {
+    let clearance = st.clearance();
+    st.log.push(Event {
+        official: text.to_string(),
+        candid: UNAVAILABLE.to_string(),
+        clearance,
+        note: None,
+        provenance: Provenance::AuthoredOfficial,
+        audience: st.audience,
+        attribution: None,
+    });
+}
+
 /// `blame(who)` — responsibility that never resolves to `self` (invariant I4).
 ///
 /// - In the open (not covert): self-blame is not representable; it is auto-redirected
@@ -655,6 +708,9 @@ fn blame(who: &str, st: &mut State) {
             ),
             clearance: Clearance::Public,
             note: None,
+            provenance: Provenance::AuthoredActual,
+            audience: st.audience,
+            attribution: None,
         });
         return;
     }

@@ -221,6 +221,7 @@ impl Parser {
                     self.kw_no_arg("address_international")?;
                     Ok(Stmt::AddressInternational)
                 }
+                "announce" => self.announce(),
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -480,6 +481,15 @@ impl Parser {
         self.next(); // 'elections'
         self.eat(&Tok::Semi)?;
         Ok(Stmt::Elections)
+    }
+
+    /// `announce "…";` — the official authoring register (Feature A). The `OFFICIAL`
+    /// face is the announced string verbatim; the `ACTUAL` face is `UNAVAILABLE`.
+    fn announce(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'announce'
+        let text = self.eat_string()?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Announce { text })
     }
 
     fn hasbara(&mut self) -> Result<Stmt, ParseError> {

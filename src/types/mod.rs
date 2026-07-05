@@ -131,6 +131,9 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
             Stmt::Proportionate { claim } => out.push(claim.clone()),
             Stmt::Disputed { name, .. } => out.push(name.clone()),
             Stmt::Deny { event } => out.push(event.clone()),
+            // The announced text is user-supplied and echoed to the OFFICIAL face — scan
+            // it for contested characterizations (E-CONTESTED) like any other output text.
+            Stmt::Announce { text } => out.push(text.clone()),
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -261,7 +264,8 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::Deny { .. }
             | Stmt::Inert { .. }
             | Stmt::Investigate { .. }
-            | Stmt::AddressInternational => {}
+            | Stmt::AddressInternational
+            | Stmt::Announce { .. } => {}
         }
     }
 }
@@ -313,7 +317,8 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Deny { .. }
                 | Stmt::Inert { .. }
                 | Stmt::Investigate { .. }
-                | Stmt::AddressInternational => {}
+                | Stmt::AddressInternational
+                | Stmt::Announce { .. } => {}
             }
         }
     }
@@ -421,7 +426,8 @@ fn check_disclosure(
             | Stmt::Deny { .. }
             | Stmt::Inert { .. }
             | Stmt::Investigate { .. }
-            | Stmt::AddressInternational => {}
+            | Stmt::AddressInternational
+            | Stmt::Announce { .. } => {}
         }
     }
 }

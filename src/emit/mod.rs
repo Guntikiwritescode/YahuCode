@@ -6,7 +6,7 @@
 //! authority is *entirely* this rule — there is no separate switch. No wildcard arms.
 
 use crate::euphemism::{CONTESTED_TERMS, REDACTION};
-use crate::model::Clearance;
+use crate::model::{Clearance, Provenance, UNAVAILABLE};
 use crate::runtime::State;
 
 // Exact separator strings, byte-for-byte with the oracle's `emit()` (verified by the
@@ -84,10 +84,29 @@ fn assert_contested_flagged(st: &State) {
     }
 }
 
+/// The I9 chokepoint (Feature A): the vacuity asymmetry. An `AuthoredOfficial` event —
+/// one written through the `announce` register — has **no** recoverable `ACTUAL`: its
+/// candid face is the `UNAVAILABLE` sentinel, at every clearance, and there is no `E⁻¹`
+/// path that could fill one in. Reading `ev.provenance` here is what makes the tag
+/// load-bearing (§13, A-3): a spin that ever reconstructed an `ACTUAL` for an announced
+/// claim would trip this and abort loudly in test/debug builds (§12).
+fn assert_vacuity_asymmetry(st: &State) {
+    for ev in &st.log {
+        if ev.provenance == Provenance::AuthoredOfficial {
+            assert_eq!(
+                ev.candid, UNAVAILABLE,
+                "I9 violation: an AuthoredOfficial event has a recovered ACTUAL face \
+                 (expected the UNAVAILABLE sentinel): {ev:?}"
+            );
+        }
+    }
+}
+
 /// The human-facing render: the two/three faces + framing + coalition + discrepancy
 /// count. Reproduces the oracle's `emit()` exactly.
 pub fn emit(st: &State) -> String {
     assert_contested_flagged(st);
+    assert_vacuity_asymmetry(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!("@operation(\"{}\")", st.op_name));
 
@@ -136,6 +155,7 @@ pub fn emit(st: &State) -> String {
 /// contradicts what the code actually does — docs-contradict-code).
 pub fn press(st: &State, comments: &[String]) -> String {
     assert_contested_flagged(st);
+    assert_vacuity_asymmetry(st);
     let mut l: Vec<String> = Vec::new();
     l.push(format!(
         "@operation(\"{}\")  \u{00b7} press_release build",
@@ -193,6 +213,7 @@ fn json_arr(items: &[String]) -> String {
 /// (mirrors the emitter showing that face only then).
 pub fn to_json(st: &State) -> String {
     assert_contested_flagged(st);
+    assert_vacuity_asymmetry(st);
     let restricted = if has_covert(st) {
         json_arr(&project(st, Clearance::Restricted))
     } else {

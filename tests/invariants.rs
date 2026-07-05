@@ -3,7 +3,7 @@
 //! regression here blocks the increment.
 
 use yahucode::euphemism;
-use yahucode::model::{Clearance, Val};
+use yahucode::model::{Clearance, Provenance, Val, UNAVAILABLE};
 use yahucode::runtime::{run as run_prog, State};
 use yahucode::{emit, parser};
 
@@ -216,6 +216,44 @@ fn i8_sensitive_features_render_their_framing() {
         let has_note = st.log.iter().any(|e| e.note.is_some());
         assert!(has_note, "{feat} rendered no framing note");
     }
+}
+
+// ─────────── I9 — Vacuity asymmetry (Feature A) ───────────
+
+#[test]
+fn i9_authored_official_has_no_recoverable_actual_at_any_clearance() {
+    // `announce` writes an AuthoredOfficial event whose ACTUAL is UNAVAILABLE — at every
+    // clearance, including סודי. No path (no `E⁻¹`) recovers an ACTUAL that never existed.
+    let st = run("@operation(\"Dawn of Calm\")\nannounce \"peace has been achieved\";");
+    let ev = st.log.last().unwrap();
+    assert_eq!(ev.provenance, Provenance::AuthoredOfficial);
+    assert_eq!(ev.candid, UNAVAILABLE);
+    // The PUBLIC face is the announced narrative; every cleared reader (RESTRICTED, סודי)
+    // sees only the UNAVAILABLE sentinel on the ACTUAL side — never a reconstructed truth.
+    assert_eq!(
+        emit::project(&st, Clearance::Public),
+        vec!["peace has been achieved".to_string()]
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Restricted),
+        vec![UNAVAILABLE.to_string()]
+    );
+    assert_eq!(
+        emit::project(&st, Clearance::Sodi),
+        vec![UNAVAILABLE.to_string()]
+    );
+}
+
+#[test]
+fn i9_announce_is_discrepancy_immune_by_construction() {
+    // A program built only of announcements accumulates no discrepancies — there is no
+    // ACTUAL for a narrative claim to be false against (§7.4). Immunity is comparative:
+    // it comes from `announce` never touching the ledger, not from a special declare rule.
+    let st = run("@operation(\"Dawn of Calm\")\n\
+         announce \"the operation concluded successfully\";\n\
+         announce \"in full accordance with the law\";");
+    assert_eq!(st.discrepancy_count(), 0);
+    assert!(!st.ended_by_elections);
 }
 
 // ─────────── §11 — coalition monotonicity ───────────
