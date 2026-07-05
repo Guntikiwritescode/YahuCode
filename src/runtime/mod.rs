@@ -283,6 +283,16 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
     match s {
         Stmt::Assign { var, value } => {
+            // "Facts on the ground": a collection binding is permanent. Its CONTENTS mutate
+            // through its own ops (`push`/`allocate`/`classify`/`remove`/`revoke`, which never
+            // erase — I13/I14), but the machine may not make a whole collection *disappear* by
+            // rebinding the name to a scalar (that would erase reality invisibly, exactly what
+            // the shared philosophy forbids). Reject any reassignment of a collection name.
+            if matches!(st.env.get(var), Some(v) if is_collection(v)) {
+                return Err(EvalError(format!(
+                    "cannot rebind `{var}`: a collection, once established, is a fact on the ground \u{2014} its contents change through its own ops (which never erase, I13/I14), but the binding is permanent"
+                )));
+            }
             // A collection constructor on the RHS registers the binding name for render
             // ordering (the label is baked into the value; this tracks *which* collections
             // exist and in what order the emitter renders them).
@@ -642,6 +652,14 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
         Stmt::AllocateSlot { coll, idx, value } => {
             let i = eval_i64(idx, st, "allocate index")?;
             let v = eval_i64(value, st, "allocate value")?;
+            // A share of a fixed allotment is non-negative by nature (a budget line, a permit
+            // count). Rejecting negatives keeps the "equal share" percentage math sound and is
+            // a controlled feature diagnostic, never a host panic (§12 E-3/G-6).
+            if v < 0 {
+                return Err(EvalError(format!(
+                    "E-SHARE: an apportionment share cannot be negative (slot {i} of '{coll}' = {v})"
+                )));
+            }
             let covert = st.covert;
             match st.env.get_mut(coll) {
                 Some(Val::Apportionment { slots, label }) => {
@@ -1280,9 +1298,12 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
         },
         Expr::Length { coll } => match st.env.get(coll) {
             Some(Val::FactsList { entries, .. }) => {
-                // The PUBLIC length: the count of live (non-delisted) entries. The real
-                // length (`entries.len()`) is the סודי accessor, surfaced only in the render.
-                let live = entries.iter().filter(|e| !e.delisted).count();
+                // The PUBLIC length: the count of live entries the public can see — non-
+                // delisted AND non-covert, matching the OFFICIAL "structures remaining" face
+                // (a covert push is absent from the public world, so it is not in the public
+                // count; its existence never leaks into a readable value — I15-adjacent). The
+                // real length (`entries.len()`) is the סודי accessor, only in the render.
+                let live = entries.iter().filter(|e| !e.delisted && !e.covert).count();
                 Ok(Val::Int(live as i64))
             }
             Some(other) => Err(EvalError(format!(
@@ -1353,9 +1374,21 @@ fn is_balanced(slots: &[crate::model::Slot], tolerance: i64) -> bool {
         slots.iter().map(|s| s.value).min(),
         slots.iter().map(|s| s.value).max(),
     ) {
-        (Some(mn), Some(mx)) => mx - mn <= tolerance,
+        // i128 so `mx - mn` can never overflow into a host panic (debug) or a wrong verdict
+        // (release wrap) on extreme slot values — the "never a host panic" rule (§12 G-6).
+        (Some(mn), Some(mx)) => (mx as i128) - (mn as i128) <= tolerance as i128,
         _ => true,
     }
+}
+
+/// Whether a value is one of the three collections (Features E/F/G). Used to keep a
+/// collection binding permanent (a collection name cannot be rebound — the "facts on the
+/// ground" rule that stops the machine from erasing a whole collection by reassignment).
+fn is_collection(v: &Val) -> bool {
+    matches!(
+        v,
+        Val::Apportionment { .. } | Val::FactsList { .. } | Val::Registry { .. }
+    )
 }
 
 /// Render the innermost laundered operation for the ACTUAL face (Feature C). Peels the

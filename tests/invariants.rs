@@ -766,3 +766,65 @@ fn i15_covert_registry_case_never_leaks_to_underclearance() {
         "the covert case key never reaches the public face: {public:?}"
     );
 }
+
+// ─────────── I15 regressions (correctness-review fixes) ───────────
+
+/// I15 (fix): a covert element's real value must not leak through the `declare`-reality
+/// path. `Val::render` (used to build the reality string) redacts covert elements, so the
+/// PUBLIC-clearance `declare` event — readable by a RESTRICTED reader — never carries `800`.
+#[test]
+fn i15_covert_value_never_leaks_via_declare_reality() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[3];\n\
+         mossad { allocate(b, 0, 800); }\n\
+         allocate(b, 1, 5);\n\
+         allocate(b, 2, 5);\n\
+         declare(balanced(b));");
+    let restricted = emit::project(&st, Clearance::Restricted, Audience::Record).join("\n");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    // The declare-reality line on the RESTRICTED face redacts the covert slot.
+    assert!(
+        restricted.contains("reality: b=[[REDACTED], 5, 5]"),
+        "the declare reality must redact the covert slot for a RESTRICTED reader: {restricted:?}"
+    );
+    assert!(
+        !restricted.contains("800"),
+        "the covert value 800 must never reach a RESTRICTED reader: {restricted:?}"
+    );
+    // Only the סודי insider sees the real value.
+    assert!(sodi.contains("800"), "the סודי insider still sees 800");
+}
+
+/// I15 (fix): the leak self-check is structural (masked-render), so a covert value that
+/// collides with the render's own boilerplate (e.g. `1` inside "1 slot(s)" / "I15") does not
+/// false-trip the debug assertion. This program must simply run without a panic.
+#[test]
+fn i15_small_covert_value_does_not_false_trip_the_guard() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         mossad { allocate(b, 0, 1); }\n\
+         allocate(b, 1, 7);");
+    // The emit path runs the I15 debug assertion; reaching here means it did not false-fire.
+    let _ = emit::emit(&st);
+    assert!(st.runtime_error.is_none());
+}
+
+/// I15-adjacent (fix): the PUBLIC length excludes covert entries, matching the OFFICIAL
+/// "structures remaining" face — a covert push never leaks its existence into a readable value.
+#[test]
+fn i15_public_length_excludes_covert_entries() {
+    let st = run("@operation(\"Solid Ground\")\n\
+         let l = facts_on_the_ground();\n\
+         push(l, \"public-1\");\n\
+         mossad { push(l, \"secret\"); }\n\
+         n = length(l);\n\
+         declare(n == 1);");
+    // length() counted only the public entry ⇒ the claim n==1 is true ⇒ no discrepancy.
+    assert_eq!(st.discrepancy_count(), 0);
+    assert_eq!(st.env.get("n"), Some(&Val::Int(1)));
+    // The real store still retains both (the covert one is not deleted).
+    match st.env.get("l") {
+        Some(Val::FactsList { entries, .. }) => assert_eq!(entries.len(), 2),
+        other => panic!("l must be a FactsList, got {other:?}"),
+    }
+}

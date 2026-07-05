@@ -1166,3 +1166,61 @@ fn feature_g_registry_keys_are_cases_not_identities() {
         actual(&st)
     );
 }
+
+// ─────────── Collection robustness regressions (correctness-review fixes) ───────────
+
+/// Feature E (fix): extreme slot values (near i64::MAX) must not overflow into a host panic;
+/// `balanced` still returns the correct verdict via i128 aggregation (§12 G-6).
+#[test]
+fn feature_e_extreme_values_do_not_panic() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         allocate(b, 0, 9223372036854775807);\n\
+         allocate(b, 1, 100);\n\
+         declare(balanced(b));");
+    // A maximally-skewed budget is NOT balanced ⇒ exactly one discrepancy, no panic.
+    assert_eq!(st.discrepancy_count(), 1);
+    assert!(st.runtime_error.is_none());
+    // The render also completes without panic across all faces.
+    let _ = emit::emit(&st);
+}
+
+/// Feature E (fix): a negative apportionment share is a controlled `E-SHARE` diagnostic
+/// (a quota/budget line cannot be negative), never a host panic and never a malformed stat.
+#[test]
+fn feature_e_negative_share_rejected() {
+    let st = run("@operation(\"Iron Equity\")\n\
+         let b = apportionment[2];\n\
+         allocate(b, 0, -5);");
+    assert!(
+        st.runtime_error
+            .as_deref()
+            .is_some_and(|e| e.contains("E-SHARE")),
+        "negative allocate must be a controlled E-SHARE diagnostic, got {:?}",
+        st.runtime_error
+    );
+}
+
+/// The shared philosophy at the binding level (fix): a collection, once established, is a
+/// "fact on the ground" — its contents mutate via ops that never erase (I13/I14), but the
+/// binding is permanent. Rebinding the name (which would erase the whole collection) is a
+/// controlled error, not a silent disappearance.
+#[test]
+fn collection_binding_is_permanent_no_rebind() {
+    let st = run("@operation(\"Solid Ground\")\n\
+         let outposts = facts_on_the_ground();\n\
+         push(outposts, \"Evyatar\");\n\
+         outposts = 0;");
+    assert!(
+        st.runtime_error
+            .as_deref()
+            .is_some_and(|e| e.contains("cannot rebind")),
+        "rebinding a collection name must be rejected, got {:?}",
+        st.runtime_error
+    );
+    // The collection and its contents survive the rejected rebind (nothing erased).
+    match st.env.get("outposts") {
+        Some(Val::FactsList { entries, .. }) => assert_eq!(entries.len(), 1),
+        other => panic!("outposts must remain a FactsList, got {other:?}"),
+    }
+}

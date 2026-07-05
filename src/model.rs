@@ -22,6 +22,12 @@ pub const SODI: &str = "\u{05e1}\u{05d5}\u{05d3}\u{05d9}";
 /// `ACTUAL` under an announced claim (there is no `E⁻¹`, invariant I9).
 pub const UNAVAILABLE: &str = "[UNAVAILABLE \u{2014} no one has said what this actually does]";
 
+/// The element-level redaction marker (Feature E/F/G, invariant I15): a covert slot / list
+/// entry / registry case renders as this to an under-`סודי` reader — its real value is never
+/// disclosed. Single source of truth: used both by `Val::render` (so a covert value can never
+/// leak through the `declare`-reality path) and by the per-reader collection render in `emit`.
+pub const REDACTED_ELEM: &str = "[REDACTED]";
+
 /// The clearance lattice — which **is** the type system (handoff §7.3). A value's
 /// type is *who may see it*, not int/string/struct. A type error is a disclosure.
 ///
@@ -244,9 +250,12 @@ impl Val {
         }
     }
 
-    /// Render the candid (ACTUAL-face) form of a value. For collections this is the real,
-    /// insider view (the `סודי` face); element-level `[REDACTED]` disclosure is applied
-    /// per-reader in `emit::project`, not here (invariant I15 is enforced at the read path).
+    /// Render the candid (ACTUAL-face) form of a value. For collections, **covert elements
+    /// are redacted to `[REDACTED]`** — because this single string may be recorded on a
+    /// PUBLIC-clearance event (e.g. the `declare`-reality line) that a RESTRICTED reader can
+    /// read, a covert element's real value must never appear here (invariant I15). The full
+    /// `סודי` values are shown only through the per-reader render in `emit::project`, which
+    /// alone knows the reader is `סודי`-cleared.
     pub fn render(&self) -> String {
         match self {
             Val::Int(n) => n.to_string(),
@@ -256,14 +265,25 @@ impl Val {
             Val::Entity { name, .. } => name.clone(),
             Val::Undisclosed => "undisclosed".to_string(),
             Val::Apportionment { slots, .. } => {
-                let cells: Vec<String> = slots.iter().map(|s| s.value.to_string()).collect();
+                let cells: Vec<String> = slots
+                    .iter()
+                    .map(|s| {
+                        if s.covert {
+                            REDACTED_ELEM.to_string()
+                        } else {
+                            s.value.to_string()
+                        }
+                    })
+                    .collect();
                 format!("[{}]", cells.join(", "))
             }
             Val::FactsList { entries, .. } => {
                 let cells: Vec<String> = entries
                     .iter()
                     .map(|e| {
-                        if e.delisted {
+                        if e.covert {
+                            REDACTED_ELEM.to_string()
+                        } else if e.delisted {
                             format!("{} (delisted)", e.item)
                         } else {
                             e.item.clone()
@@ -276,8 +296,12 @@ impl Val {
                 let cells: Vec<String> = entries
                     .iter()
                     .map(|e| {
-                        let tag = if e.revoked { " (revoked)" } else { "" };
-                        format!("{}\u{2192}{}{tag}", e.key, e.jurisdiction.court())
+                        if e.covert {
+                            REDACTED_ELEM.to_string()
+                        } else {
+                            let tag = if e.revoked { " (revoked)" } else { "" };
+                            format!("{}\u{2192}{}{tag}", e.key, e.jurisdiction.court())
+                        }
                     })
                     .collect();
                 format!("[{}]", cells.join(", "))

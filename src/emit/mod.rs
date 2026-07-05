@@ -8,14 +8,9 @@
 use crate::euphemism::{CONTESTED_TERMS, REDACTION};
 use crate::model::{
     Audience, Clearance, ListEntry, Provenance, RegEntry, Slot, Val, NEITHER_CONFIRM_NOR_DENY,
-    UNAVAILABLE,
+    REDACTED_ELEM, UNAVAILABLE,
 };
 use crate::runtime::State;
-
-/// The element-level redaction marker (Feature E/F/G, invariant I15): a covert slot / list
-/// entry / registry case renders as this to an under-`סודי` reader — its real value is never
-/// disclosed. Distinct from the event-level `████` placeholder; it names a *withheld element*.
-const REDACTED_ELEM: &str = "[REDACTED]";
 
 // Exact separator strings, byte-for-byte with the oracle's `emit()` (verified by the
 // golden fixtures). Box-drawing: ┌ ├ └ │ ─ ; middle dot · (U+00B7); em-dash — (U+2014).
@@ -122,9 +117,11 @@ fn render_apportionment(label: &str, slots: &[Slot], reader: Clearance) -> Vec<S
     let vector = format!("[{}]", cells.join(", "));
     let hidden = slots.iter().filter(|s| s.covert).count();
     if redact && hidden > 0 {
-        // A cleared-but-not-`סודי` reader: existence shown, the outsized line(s) withheld.
+        // A cleared-but-not-`סודי` reader: the covert line(s) exist but their values stay
+        // sealed. Phrased to hold for ANY covert slot — it never claims the redacted line is
+        // the large one (that would be a magnitude disclosure and is not always true).
         return vec![format!(
-            "{label}: {vector} \u{2014} {hidden} slot(s) withheld from the public record; the redacted line(s) hold the outsized share (I15)"
+            "{label}: {vector} \u{2014} {hidden} slot(s) withheld from the public record; the disclosed figures are not the whole (I15)"
         )];
     }
     // Full `סודי` view (or a `Restricted` view of a collection with no covert slots).
@@ -228,7 +225,8 @@ fn render_registry(
     let mut out = Vec::new();
     for e in entries {
         if e.covert && redact {
-            out.push(format!("{}: routing withheld ({REDACTED_ELEM})", "case"));
+            // The covert case's key itself is sealed to an under-`סודי` reader (I15).
+            out.push(format!("{REDACTED_ELEM}: routing withheld"));
             continue;
         }
         let desc = match &e.descriptor {
@@ -256,11 +254,44 @@ fn render_registry(
         }
     }
     if juris.len() >= 2 {
-        out.push(
-            "same act, same place \u{2014} routed to different court systems by assigned status, not by the 'equal' law it proclaims; the military forum is the harsher one (Palestinians tried as adults at 16 vs 18 in the civilian system) [dual-court fact: sourced]".to_string(),
-        );
+        out.push(registry_punchline(entries));
     }
     out
+}
+
+/// The differential-routing punchline for a split registry (Feature G). The nationality-
+/// specific exposure (the sourced West-Bank disparity) is emitted ONLY when the cases
+/// actually carry the dual-court signature; for any other split registry — the reusable
+/// primitive applied to permits, inquiries, benefits — the generic line keeps the butt on
+/// the routing apparatus without importing a claim the data does not carry (§9.4 fidelity:
+/// "Palestinians tried at 16" is never said about cases that are not Palestinian).
+fn registry_punchline(entries: &[RegEntry]) -> String {
+    if is_dual_court(entries) {
+        // The one face that must be blunt (the `סודי` exposure): routed by NATIONALITY, not
+        // by the law it proclaims. The identity here is exposed, condemned reality — named
+        // directly above in the descriptors and in the framing note — never the operative
+        // key (§9.4). Sharpening this to "by nationality" does not touch G1.
+        "same act, same place \u{2014} routed to different court systems by nationality, not by the law it proclaims; the military forum is the harsher one (Palestinians tried as adults at 16 vs 18 in the civilian system) [dual-court fact: sourced]".to_string()
+    } else {
+        "same act, same place \u{2014} routed to different court systems by assigned status, not by the uniform law it proclaims".to_string()
+    }
+}
+
+/// Whether a registry carries the West-Bank dual-court signature — a Palestinian-descriptor
+/// case routed to a military court AND a settler-descriptor case routed to a civilian court.
+/// Descriptor-driven, so the sourced nationality claim is only ever made about cases that
+/// actually carry those identities, never imported onto a generic reuse of the primitive.
+fn is_dual_court(entries: &[RegEntry]) -> bool {
+    use crate::model::Jurisdiction;
+    let palestinian_military = entries.iter().any(|e| {
+        e.jurisdiction == Jurisdiction::Military
+            && matches!(e.descriptor.as_deref(), Some(d) if d.contains("Palestinian"))
+    });
+    let settler_civilian = entries.iter().any(|e| {
+        e.jurisdiction == Jurisdiction::Civilian
+            && matches!(e.descriptor.as_deref(), Some(d) if d.contains("settler"))
+    });
+    palestinian_military && settler_civilian
 }
 
 /// The `W-DOUBLETALK` diagnostics (Feature B, §8.3): for each poly-statement that took
@@ -393,52 +424,88 @@ fn assert_contested_flagged(st: &State) {
 
 /// The I15 chokepoint (Feature E/F/G): a covert collection element's real value is **never**
 /// returned to an under-`סודי` reader. Live in test/debug builds — an element leak across
-/// clearance aborts loudly (Appendix E), never silently. The `סודי` reader is the only one
-/// that may see a covert element's raw value; the PUBLIC/RESTRICTED renders must not contain it.
+/// clearance aborts loudly (Appendix E), never silently.
+///
+/// The check is structural, not a substring scan (which would false-positive when a covert
+/// value collides with the render's own boilerplate, e.g. a covert `1` matching "I15" or
+/// "1 slot(s)"): a PUBLIC/RESTRICTED render must be *independent* of every covert element's
+/// value. We perturb the covert values and re-render; if an under-`סודי` render changes, a
+/// covert value influenced it — a leak.
 fn assert_no_element_leak(st: &State) {
     for name in &st.collection_order {
         let Some(val) = st.env.get(name) else {
             continue;
         };
-        for secret in covert_values(val) {
-            for reader in [Clearance::Public, Clearance::Restricted] {
-                for line in render_collection(val, reader) {
-                    debug_assert!(
-                        !line.contains(&secret),
-                        "I15 violation: covert element value {secret:?} leaked to the {} face of `{name}`",
-                        reader.label()
-                    );
-                }
-            }
+        if !collection_has_covert(val) {
+            continue;
+        }
+        let masked = mask_covert(val);
+        for reader in [Clearance::Public, Clearance::Restricted] {
+            debug_assert_eq!(
+                render_collection(val, reader),
+                render_collection(&masked, reader),
+                "I15 violation: a covert element's value influenced the {} face of `{name}`",
+                reader.label()
+            );
         }
     }
 }
 
-/// The raw rendered values of a collection's covert elements — the strings that must never
-/// reach an under-`סודי` reader (I15). Empty for a collection with no covert elements.
-fn covert_values(val: &Val) -> Vec<String> {
+/// A clone of a collection in which every covert element's *value* is perturbed to a distinct
+/// one, leaving covert flags, positions, delisted/revoked flags, jurisdictions, and non-covert
+/// elements untouched. Used only by the I15 self-check: a PUBLIC/RESTRICTED render that differs
+/// between a collection and its masked twin has leaked a covert element's value.
+fn mask_covert(val: &Val) -> Val {
     match val {
-        Val::Apportionment { slots, .. } => slots
-            .iter()
-            .filter(|s| s.covert)
-            .map(|s| s.value.to_string())
-            .collect(),
-        Val::FactsList { entries, .. } => entries
-            .iter()
-            .filter(|e| e.covert)
-            .map(|e| e.item.clone())
-            .collect(),
-        Val::Registry { entries, .. } => entries
-            .iter()
-            .filter(|e| e.covert)
-            .map(|e| e.key.clone())
-            .collect(),
-        Val::Int(_)
-        | Val::Bool(_)
-        | Val::Str(_)
-        | Val::Unit
-        | Val::Entity { .. }
-        | Val::Undisclosed => Vec::new(),
+        Val::Apportionment { label, slots } => Val::Apportionment {
+            label: label.clone(),
+            slots: slots
+                .iter()
+                .map(|s| Slot {
+                    value: if s.covert {
+                        s.value.wrapping_add(1)
+                    } else {
+                        s.value
+                    },
+                    covert: s.covert,
+                })
+                .collect(),
+        },
+        Val::FactsList { label, entries } => Val::FactsList {
+            label: label.clone(),
+            entries: entries
+                .iter()
+                .map(|e| ListEntry {
+                    item: if e.covert {
+                        format!("{}~MASKED~", e.item)
+                    } else {
+                        e.item.clone()
+                    },
+                    ..e.clone()
+                })
+                .collect(),
+        },
+        Val::Registry {
+            label,
+            official_rule,
+            entries,
+        } => Val::Registry {
+            label: label.clone(),
+            official_rule: official_rule.clone(),
+            entries: entries
+                .iter()
+                .map(|e| RegEntry {
+                    key: if e.covert {
+                        format!("{}~MASKED~", e.key)
+                    } else {
+                        e.key.clone()
+                    },
+                    ..e.clone()
+                })
+                .collect(),
+        },
+        // Non-collections never reach here (guarded by `collection_has_covert`).
+        other => other.clone(),
     }
 }
 
