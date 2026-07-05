@@ -13,8 +13,6 @@ pub enum Tok {
     Operation,
     /// a `"…"` string literal (contents, no surrounding quotes)
     Str(String),
-    /// `==`
-    EqEq,
     /// an integer literal
     Int(i64),
     /// an identifier / keyword
@@ -26,6 +24,23 @@ pub enum Tok {
     Comma,
     Semi,
     Eq,
+    // comparison / equality
+    EqEq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    // arithmetic
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    // boolean
+    AmpAmp,
+    PipePipe,
+    Bang,
     Eof,
 }
 
@@ -128,6 +143,99 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 } else {
                     i += 1;
                     out.push(Token { tok: Tok::Eq, line });
+                }
+            }
+            '!' => {
+                if i + 1 < n && chars[i + 1] == '=' {
+                    i += 2;
+                    out.push(Token { tok: Tok::Ne, line });
+                } else {
+                    i += 1;
+                    out.push(Token {
+                        tok: Tok::Bang,
+                        line,
+                    });
+                }
+            }
+            '<' => {
+                if i + 1 < n && chars[i + 1] == '=' {
+                    i += 2;
+                    out.push(Token { tok: Tok::Le, line });
+                } else {
+                    i += 1;
+                    out.push(Token { tok: Tok::Lt, line });
+                }
+            }
+            '>' => {
+                if i + 1 < n && chars[i + 1] == '=' {
+                    i += 2;
+                    out.push(Token { tok: Tok::Ge, line });
+                } else {
+                    i += 1;
+                    out.push(Token { tok: Tok::Gt, line });
+                }
+            }
+            '+' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Plus,
+                    line,
+                });
+            }
+            '-' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Minus,
+                    line,
+                });
+            }
+            '*' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Star,
+                    line,
+                });
+            }
+            '/' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Slash,
+                    line,
+                });
+            }
+            '%' => {
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Percent,
+                    line,
+                });
+            }
+            '&' => {
+                if i + 1 < n && chars[i + 1] == '&' {
+                    i += 2;
+                    out.push(Token {
+                        tok: Tok::AmpAmp,
+                        line,
+                    });
+                } else {
+                    return Err(LexError {
+                        message: "unexpected `&` (did you mean `&&`?)".into(),
+                        line,
+                    });
+                }
+            }
+            '|' => {
+                if i + 1 < n && chars[i + 1] == '|' {
+                    i += 2;
+                    out.push(Token {
+                        tok: Tok::PipePipe,
+                        line,
+                    });
+                } else {
+                    return Err(LexError {
+                        message: "unexpected `|` (did you mean `||`?)".into(),
+                        line,
+                    });
                 }
             }
             '(' => {

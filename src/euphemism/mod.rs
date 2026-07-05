@@ -193,6 +193,13 @@ pub fn is_sanctioned(verb: &str) -> bool {
     ACTIONS.iter().any(|(pr, _)| *pr == verb)
 }
 
+/// Whether a surface verb denotes an operation at all — either sanctioned (a PR verb)
+/// or a plain term the Spokesperson would reject. Used by the parser to tell an action
+/// `neutralize(target);` from a user-function call `f(x);`.
+pub fn is_action_verb(verb: &str) -> bool {
+    is_sanctioned(verb) || plain_suggestion(verb).is_some()
+}
+
 /// Resolve a sanctioned surface verb to its candid plain verb (insider data).
 pub fn candid_verb(verb: &str) -> String {
     for (pr, plain) in ACTIONS {

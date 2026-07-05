@@ -1,28 +1,51 @@
 //! The runtime: the machine configuration and the step relation.
 //!
-//! Phase-0 spine (handoff §7, Appendix B). The three stores are deliberately
-//! different *kinds*:
-//! - **ACTUAL** — the real machine (Phase 0: an integer environment; generalized to a
-//!   Turing-complete evaluator in Phase 1).
-//! - **OFFICIAL** — the append-only, clearance-tagged statement log (`self.log`). Its
-//!   PUBLIC projection is the press release. Never branched on.
+//! The three stores are deliberately different *kinds* (handoff §7.2):
+//! - **ACTUAL** — a real, deterministic, Turing-complete machine: a scoped `Val`
+//!   environment + user functions + `if`/`while`. **All control flow branches on A.**
+//! - **OFFICIAL** — the append-only, clearance-tagged statement log (`self.log`); its
+//!   PUBLIC projection is the press release; never branched on.
 //! - **DISCREPANCY** — the append-only ledger; a false `declare` appends here; the
 //!   count is `discrepancies.len()`; no in-world audience sees it.
 //!
-//! No wildcard arms: `exec_stmt` matches every `Stmt` variant.
+//! `declare` writes both tapes and never affects control flow (invariant I3). The only
+//! thing that stops the driver is the government falling (`elections` / core ≤ 0 —
+//! invariant I6). No wildcard arms: `exec_stmt` and `eval` match every variant.
 
 use std::collections::HashMap;
 
-use crate::ast::{DeclRhs, Program, Stmt};
+use crate::ast::{pretty, vars_in, BinOp, Expr, Program, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
-use crate::model::{Discrepancy, Event};
+use crate::model::{Discrepancy, Event, Truth, Val};
 
-/// The machine configuration `Σ` (handoff Appendix B), ported from the spike `State`.
+mod env;
+pub use env::Env;
+
+/// A recoverable in-language evaluation error (unknown variable/function, type
+/// mismatch, division by zero, arity mismatch). `declare` swallows these (I3); at the
+/// driver level an unhandled one stops execution and is recorded in `runtime_error`
+/// — it is **not** an in-world halt (`elections` is the only halt, I6).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EvalError(pub String);
+
+/// Control-flow outcome of executing a statement/block.
+enum Flow {
+    Next,
+    Return(Val),
+}
+
+type EvalResult = Result<Val, EvalError>;
+type ExecResult = Result<Flow, EvalError>;
+
+/// The machine configuration `Σ` (handoff Appendix B), ported and generalized from the
+/// spike `State`.
 #[derive(Clone, Debug)]
 pub struct State {
-    /// ACTUAL store (Phase 0: integer environment).
-    pub env: HashMap<String, i64>,
+    /// ACTUAL store: a scoped value environment.
+    pub env: Env,
+    /// User-defined functions: name → (params, body).
+    pub funcs: HashMap<String, (Vec<String>, Vec<Stmt>)>,
     /// OFFICIAL log — append-only, clearance-tagged.
     pub log: Vec<Event>,
     /// DISCREPANCY ledger — append-only, read-never-by-default.
@@ -31,10 +54,14 @@ pub struct State {
     pub core: i64,
     /// The only in-world terminal outcome (invariant I6).
     pub ended_by_elections: bool,
+    /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
+    pub runtime_error: Option<String>,
     /// The mandatory grand operation name (#20).
     pub op_name: String,
     /// Turn counter.
     pub turn: u64,
+    /// Evaluation-step counter (drives the non-termination safety valve).
+    pub steps: u64,
     /// Named runtime parameters (no magic constants — §12).
     pub config: RuntimeConfig,
 }
@@ -42,13 +69,16 @@ pub struct State {
 impl State {
     fn new(op_name: String, config: RuntimeConfig) -> Self {
         State {
-            env: HashMap::new(),
+            env: Env::new(),
+            funcs: HashMap::new(),
             log: Vec::new(),
             discrepancies: Vec::new(),
             core: config.core_start,
             ended_by_elections: false,
+            runtime_error: None,
             op_name,
             turn: 0,
+            steps: 0,
             config,
         }
     }
@@ -67,55 +97,97 @@ pub fn run(program: &Program) -> State {
 /// Run a program with an explicit config.
 pub fn run_with_config(program: &Program, config: RuntimeConfig) -> State {
     let mut st = State::new(program.op_name.clone(), config);
-    exec_block(&program.body, &mut st);
+    if let Err(e) = exec_block(&program.body, &mut st) {
+        st.runtime_error = Some(e.0);
+    }
     st
 }
 
-fn exec_block(stmts: &[Stmt], st: &mut State) {
+fn exec_block(stmts: &[Stmt], st: &mut State) -> ExecResult {
     for s in stmts {
         // The only thing that stops execution is the government falling (I6).
         if st.ended_by_elections {
-            return;
+            return Ok(Flow::Next);
         }
-        exec_stmt(s, st);
+        match exec_stmt(s, st)? {
+            Flow::Next => {}
+            Flow::Return(v) => return Ok(Flow::Return(v)),
+        }
     }
+    Ok(Flow::Next)
 }
 
-fn exec_stmt(s: &Stmt, st: &mut State) {
+fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
+    // Non-termination safety valve: a loud implementation abort, never a silent hang
+    // and never the in-world `elections` outcome (§12).
+    st.steps += 1;
+    if st.steps > st.config.max_steps {
+        return Err(EvalError(format!(
+            "step budget exceeded ({}); possible non-termination",
+            st.config.max_steps
+        )));
+    }
+
     match s {
         Stmt::Assign { var, value } => {
-            st.env.insert(var.clone(), *value);
+            let v = eval(value, st)?;
+            st.env.set(var, v);
+            Ok(Flow::Next)
         }
 
-        Stmt::Declare { lhs, rhs } => {
-            let lhs_val = st.env.get(lhs).copied();
-            let (rhs_render, rhs_val) = match rhs {
-                DeclRhs::Int(v) => (v.to_string(), Some(*v)),
-                DeclRhs::Var(name) => (name.clone(), st.env.get(name).copied()),
-            };
-            // The REAL truth against ACTUAL. Missing variables compare as `None`,
-            // matching the spike's `env.get(...)` semantics.
-            let truth = lhs_val == rhs_val;
+        Stmt::Declare(e) => {
+            declare(e, st);
+            Ok(Flow::Next)
+        }
 
-            let claim = format!("{lhs} == {rhs_render}");
-            let official = euphemism::e(&claim);
-            let lhs_disp = match lhs_val {
-                Some(v) => v.to_string(),
-                None => "None".to_string(),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            let c = eval(cond, st)?;
+            // Branch on the REAL truth. `Undisclosed` (mossad) → neither-confirm-nor-
+            // deny → the branch is not taken.
+            match c.truth() {
+                Truth::True => exec_block(then_body, st),
+                Truth::False | Truth::Undisclosed => exec_block(else_body, st),
+            }
+        }
+
+        Stmt::While { cond, body } => {
+            loop {
+                if st.ended_by_elections {
+                    return Ok(Flow::Next);
+                }
+                let c = eval(cond, st)?;
+                if c.truth() != Truth::True {
+                    break;
+                }
+                match exec_block(body, st)? {
+                    Flow::Next => {}
+                    Flow::Return(v) => return Ok(Flow::Return(v)),
+                }
+            }
+            Ok(Flow::Next)
+        }
+
+        Stmt::FuncDef { name, params, body } => {
+            st.funcs
+                .insert(name.clone(), (params.clone(), body.clone()));
+            Ok(Flow::Next)
+        }
+
+        Stmt::Return(opt) => {
+            let v = match opt {
+                Some(e) => eval(e, st)?,
+                None => Val::Unit,
             };
-            let mut candid = format!("claim[{claim}] \u{2014} reality: {lhs}={lhs_disp}");
-            if !truth {
-                candid.push_str("  \u{21d2} FALSE");
-            }
-            st.log.push(Event::public(official.clone(), candid.clone()));
-            // I3: a false claim leaves a trace and NEVER affects control flow.
-            if !truth {
-                st.discrepancies.push(Discrepancy {
-                    claim: official,
-                    reality: candid,
-                    turn: st.turn,
-                });
-            }
+            Ok(Flow::Return(v))
+        }
+
+        Stmt::ExprStmt(e) => {
+            eval(e, st)?;
+            Ok(Flow::Next)
         }
 
         Stmt::Hasbara {
@@ -126,7 +198,7 @@ fn exec_stmt(s: &Stmt, st: &mut State) {
                 format!("[talking point: {talking_point}]"),
                 format!("[talking point declared up front: {talking_point}]"),
             ));
-            exec_block(body, st);
+            exec_block(body, st)
         }
 
         Stmt::Action {
@@ -134,20 +206,227 @@ fn exec_stmt(s: &Stmt, st: &mut State) {
             target,
             self_defense,
         } => {
-            // The candid verb is insider data from the action table; the OFFICIAL face
-            // is E(candid). There is no E⁻¹ (I2): OFFICIAL is derived from ACTUAL.
-            let cverb = euphemism::candid_verb(verb);
-            let clabel = euphemism::candid_label(target);
-            let mut candid = format!("{cverb}({clabel})");
-            let mut official = euphemism::e(&candid);
-            if *self_defense {
-                official.push_str("  [self-defense]");
-                candid
-                    .push_str("  [self-defense claim \u{2014} unexamined, any magnitude accepted]");
-            }
-            st.log.push(Event::public(official, candid));
+            action(verb, target, *self_defense, st);
+            Ok(Flow::Next)
         }
     }
+}
+
+/// `declare` / `assert` — writes OFFICIAL, logs a discrepancy iff the claim is really
+/// false against ACTUAL, and **never** affects control flow or fails (invariant I3).
+/// Evaluation is defensive: a claim that cannot be evaluated is treated as false
+/// (an unverifiable claim is not true), so `declare` never propagates an error.
+fn declare(e: &Expr, st: &mut State) {
+    let claim_src = pretty(e);
+    let official = euphemism::e(&claim_src);
+
+    let reality = vars_in(e)
+        .iter()
+        .map(|v| {
+            let disp = st
+                .env
+                .get(v)
+                .map(|x| x.render())
+                .unwrap_or_else(|| "None".to_string());
+            format!("{v}={disp}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let truth = match eval(e, st) {
+        Ok(v) => v.truth(),
+        Err(_) => Truth::False,
+    };
+
+    let mut candid = format!("claim[{claim_src}] \u{2014} reality: {reality}");
+    if truth == Truth::False {
+        candid.push_str("  \u{21d2} FALSE");
+    }
+    st.log.push(Event::public(official.clone(), candid.clone()));
+    if truth == Truth::False {
+        st.discrepancies.push(Discrepancy {
+            claim: official,
+            reality: candid,
+            turn: st.turn,
+        });
+    }
+}
+
+/// A sanctioned action `verb(target)`. The candid verb is insider data from the action
+/// table; the OFFICIAL face is `E(candid)` (no `E⁻¹`, I2).
+fn action(verb: &str, target: &str, self_defense: bool, st: &mut State) {
+    let cverb = euphemism::candid_verb(verb);
+    let clabel = euphemism::candid_label(target);
+    let mut candid = format!("{cverb}({clabel})");
+    let mut official = euphemism::e(&candid);
+    if self_defense {
+        official.push_str("  [self-defense]");
+        candid.push_str("  [self-defense claim \u{2014} unexamined, any magnitude accepted]");
+    }
+    st.log.push(Event::public(official, candid));
+}
+
+// ─────────── expression evaluation over ACTUAL ───────────
+
+fn eval(e: &Expr, st: &mut State) -> EvalResult {
+    match e {
+        Expr::Int(n) => Ok(Val::Int(*n)),
+        Expr::Bool(b) => Ok(Val::Bool(*b)),
+        Expr::Str(s) => Ok(Val::Str(s.clone())),
+        Expr::Var(name) => st
+            .env
+            .get(name)
+            .cloned()
+            .ok_or_else(|| EvalError(format!("unknown variable `{name}`"))),
+        Expr::UnOp { op, expr } => {
+            let v = eval(expr, st)?;
+            if v == Val::Undisclosed {
+                return Ok(Val::Undisclosed); // contagion
+            }
+            apply_unop(*op, v)
+        }
+        Expr::BinOp { op, lhs, rhs } => eval_binop(*op, lhs, rhs, st),
+        Expr::Call { name, args } => {
+            let mut argv = Vec::with_capacity(args.len());
+            for a in args {
+                argv.push(eval(a, st)?);
+            }
+            call_function(name, argv, st)
+        }
+    }
+}
+
+fn eval_binop(op: BinOp, lhs: &Expr, rhs: &Expr, st: &mut State) -> EvalResult {
+    // Short-circuiting boolean operators (also propagate `undisclosed` contagion).
+    match op {
+        BinOp::And => {
+            let l = eval(lhs, st)?;
+            return match l {
+                Val::Undisclosed => Ok(Val::Undisclosed),
+                Val::Bool(false) => Ok(Val::Bool(false)),
+                Val::Bool(true) => match eval(rhs, st)? {
+                    Val::Undisclosed => Ok(Val::Undisclosed),
+                    Val::Bool(b) => Ok(Val::Bool(b)),
+                    other => type_err("&&", &other),
+                },
+                other => type_err("&&", &other),
+            };
+        }
+        BinOp::Or => {
+            let l = eval(lhs, st)?;
+            return match l {
+                Val::Undisclosed => Ok(Val::Undisclosed),
+                Val::Bool(true) => Ok(Val::Bool(true)),
+                Val::Bool(false) => match eval(rhs, st)? {
+                    Val::Undisclosed => Ok(Val::Undisclosed),
+                    Val::Bool(b) => Ok(Val::Bool(b)),
+                    other => type_err("||", &other),
+                },
+                other => type_err("||", &other),
+            };
+        }
+        _ => {}
+    }
+
+    let l = eval(lhs, st)?;
+    if l == Val::Undisclosed {
+        return Ok(Val::Undisclosed);
+    }
+    let r = eval(rhs, st)?;
+    if r == Val::Undisclosed {
+        return Ok(Val::Undisclosed);
+    }
+    apply_binop(op, l, r)
+}
+
+fn apply_unop(op: UnOp, v: Val) -> EvalResult {
+    match (op, v) {
+        (UnOp::Neg, Val::Int(n)) => Ok(Val::Int(-n)),
+        (UnOp::Not, Val::Bool(b)) => Ok(Val::Bool(!b)),
+        (UnOp::Neg, other) => type_err("unary -", &other),
+        (UnOp::Not, other) => type_err("!", &other),
+    }
+}
+
+fn apply_binop(op: BinOp, l: Val, r: Val) -> EvalResult {
+    use BinOp::*;
+    match op {
+        // Equality works across the value set (mismatched kinds are simply not equal).
+        Eq => Ok(Val::Bool(l == r)),
+        Ne => Ok(Val::Bool(l != r)),
+        // Arithmetic and ordering require integers.
+        Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => match (l, r) {
+            (Val::Int(a), Val::Int(b)) => int_binop(op, a, b),
+            (a, _) => type_err(op.as_str(), &a),
+        },
+        // And/Or handled in `eval_binop`.
+        And | Or => unreachable_binop(),
+    }
+}
+
+fn int_binop(op: BinOp, a: i64, b: i64) -> EvalResult {
+    use BinOp::*;
+    let v = match op {
+        Add => Val::Int(a.wrapping_add(b)),
+        Sub => Val::Int(a.wrapping_sub(b)),
+        Mul => Val::Int(a.wrapping_mul(b)),
+        Div => {
+            if b == 0 {
+                return Err(EvalError("division by zero".into()));
+            }
+            Val::Int(a.wrapping_div(b))
+        }
+        Mod => {
+            if b == 0 {
+                return Err(EvalError("modulo by zero".into()));
+            }
+            Val::Int(a.wrapping_rem(b))
+        }
+        Lt => Val::Bool(a < b),
+        Le => Val::Bool(a <= b),
+        Gt => Val::Bool(a > b),
+        Ge => Val::Bool(a >= b),
+        Eq | Ne | And | Or => unreachable_binop()?,
+    };
+    Ok(v)
+}
+
+fn call_function(name: &str, argv: Vec<Val>, st: &mut State) -> EvalResult {
+    let Some((params, body)) = st.funcs.get(name).cloned() else {
+        return Err(EvalError(format!("unknown function `{name}`")));
+    };
+    if params.len() != argv.len() {
+        return Err(EvalError(format!(
+            "`{name}` expects {} argument(s), got {}",
+            params.len(),
+            argv.len()
+        )));
+    }
+    st.env.push_frame();
+    for (p, v) in params.iter().zip(argv) {
+        st.env.define_local(p, v);
+    }
+    let flow = exec_block(&body, st);
+    st.env.pop_frame();
+    match flow? {
+        Flow::Return(v) => Ok(v),
+        Flow::Next => Ok(Val::Unit),
+    }
+}
+
+fn type_err(op: &str, v: &Val) -> EvalResult {
+    Err(EvalError(format!(
+        "type error: `{op}` not applicable to {}",
+        v.render()
+    )))
+}
+
+/// And/Or never reach `apply_binop`/`int_binop`; this makes that explicit without a
+/// wildcard arm masking a real missing case.
+fn unreachable_binop() -> EvalResult {
+    Err(EvalError(
+        "internal: boolean operator routed to the arithmetic path".into(),
+    ))
 }
 
 #[cfg(test)]

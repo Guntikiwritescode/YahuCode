@@ -1,5 +1,13 @@
 use super::*;
-use crate::ast::{DeclRhs, Stmt};
+use crate::ast::{BinOp, Expr, Stmt};
+
+fn bin(op: BinOp, l: Expr, r: Expr) -> Expr {
+    Expr::BinOp {
+        op,
+        lhs: Box::new(l),
+        rhs: Box::new(r),
+    }
+}
 
 #[test]
 fn parses_operation_and_body() {
@@ -11,12 +19,9 @@ fn parses_operation_and_body() {
         vec![
             Stmt::Assign {
                 var: "casualties".into(),
-                value: 100
+                value: Expr::Int(100),
             },
-            Stmt::Declare {
-                lhs: "casualties".into(),
-                rhs: DeclRhs::Int(0)
-            },
+            Stmt::Declare(bin(BinOp::Eq, Expr::Var("casualties".into()), Expr::Int(0))),
         ]
     );
 }
@@ -33,8 +38,8 @@ fn parses_hasbara_with_action() {
             body: vec![Stmt::Action {
                 verb: "neutralize".into(),
                 target: "target".into(),
-                self_defense: false
-            }]
+                self_defense: false,
+            }],
         }]
     );
 }
@@ -42,7 +47,44 @@ fn parses_hasbara_with_action() {
 #[test]
 fn assert_is_an_alias_of_declare() {
     let p = parse("@operation(\"Iron Wall\")\nx = 1;\nassert(x == 1);").unwrap();
-    assert!(matches!(p.body[1], Stmt::Declare { .. }));
+    assert!(matches!(p.body[1], Stmt::Declare(_)));
+}
+
+#[test]
+fn parses_control_flow_and_functions() {
+    let src = "@operation(\"Iron Dome\")\n\
+        func sq(n) { return n * n; }\n\
+        x = 0;\n\
+        while (x < 3) { x = x + 1; }\n\
+        if (x == 3) { y = sq(x); } else { y = 0; }";
+    let p = parse(src).unwrap();
+    assert!(matches!(p.body[0], Stmt::FuncDef { .. }));
+    assert!(matches!(p.body[2], Stmt::While { .. }));
+    assert!(matches!(p.body[3], Stmt::If { .. }));
+}
+
+#[test]
+fn precedence_is_respected() {
+    // 1 + 2 * 3  parses as  1 + (2 * 3)
+    let p = parse("@operation(\"X\")\nr = 1 + 2 * 3;").unwrap();
+    let Stmt::Assign { value, .. } = &p.body[0] else {
+        panic!("expected assign");
+    };
+    assert_eq!(
+        *value,
+        bin(
+            BinOp::Add,
+            Expr::Int(1),
+            bin(BinOp::Mul, Expr::Int(2), Expr::Int(3))
+        )
+    );
+}
+
+#[test]
+fn user_call_is_not_an_action() {
+    // `f(x);` where f is not an action verb → an expression statement (call).
+    let p = parse("@operation(\"X\")\nf(x);").unwrap();
+    assert!(matches!(p.body[0], Stmt::ExprStmt(Expr::Call { .. })));
 }
 
 #[test]
