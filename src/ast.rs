@@ -106,6 +106,11 @@ pub enum Expr {
     /// `(self_defense) e` — the universal cast (#7): always type-checks, at any
     /// magnitude; the one sanctioned bypass of the disclosure check (Phase 2).
     SelfDefense(Box<Expr>),
+
+    /// `external(args…)` — the mossad foreign interface (handoff §7.6). In v1 a
+    /// deterministic mock: it logs a declared effect and returns `undisclosed`
+    /// (`neither_confirm_nor_deny`), which is contagious within the covert scope.
+    External(Vec<Expr>),
 }
 
 /// A statement. **Closed set** — matched exhaustively in `runtime/` (and `types/`).
@@ -172,6 +177,16 @@ pub enum Stmt {
     /// `elections;` — the only explicit in-world halt (invariant I6). The government
     /// dissolves; nothing after it runs.
     Elections,
+
+    /// `mossad { … }` — a covert scope (§7.6). Its operations affect ACTUAL but are
+    /// `סודי`-tagged: absent from the PUBLIC record, redacted for RESTRICTED, candid for
+    /// `סודי` insiders. It is also the foreign interface and the source of `undisclosed`.
+    Mossad { body: Vec<Stmt> },
+
+    /// `blame(who);` — responsibility that never resolves to `self` (#10, invariant I4).
+    /// Inside `mossad` it resolves by clearance: publicly `neither confirm nor deny`,
+    /// insider-attributable to the real actor.
+    Blame { who: String },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,
@@ -202,6 +217,11 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::Read(e) | Expr::SelfDefense(e) => collect_vars(e, out),
         Expr::Cast { expr, .. } => collect_vars(expr, out),
+        Expr::External(args) => {
+            for a in args {
+                collect_vars(a, out);
+            }
+        }
     }
 }
 
@@ -229,5 +249,9 @@ pub fn pretty(expr: &Expr) -> String {
         Expr::Read(e) => format!("read({})", pretty(e)),
         Expr::Cast { target, expr } => format!("({}) {}", target.label(), pretty(expr)),
         Expr::SelfDefense(e) => format!("(self_defense) {}", pretty(e)),
+        Expr::External(args) => {
+            let a: Vec<String> = args.iter().map(pretty).collect();
+            format!("external({})", a.join(", "))
+        }
     }
 }

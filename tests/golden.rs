@@ -25,6 +25,10 @@ const ENABLED: &[(&str, &str)] = &[
         "tests/golden/example_03.emit",
     ),
     (
+        "examples/05_silent_shield.yahu",
+        "tests/golden/example_05.emit",
+    ),
+    (
         "examples/06_guardian_of_the_walls.yahu",
         "tests/golden/example_06.emit",
     ),

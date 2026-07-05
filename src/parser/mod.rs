@@ -132,6 +132,8 @@ impl Parser {
                 "return" => self.return_stmt(),
                 "declare" | "assert" => self.declare(),
                 "hasbara" => self.hasbara(),
+                "mossad" => self.mossad(),
+                "blame" => self.blame(),
                 "let" => self.allocate(),
                 "bribe" => self.bribe(),
                 "postpone" => self.postpone(),
@@ -337,6 +339,23 @@ impl Parser {
         })
     }
 
+    /// `mossad { … }` — the covert scope.
+    fn mossad(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'mossad'
+        let body = self.block()?;
+        Ok(Stmt::Mossad { body })
+    }
+
+    /// `blame(who);`
+    fn blame(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'blame'
+        self.eat(&Tok::LParen)?;
+        let who = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Blame { who })
+    }
+
     // ─────────── expressions (precedence climbing) ───────────
 
     fn expr(&mut self) -> Result<Expr, ParseError> {
@@ -484,6 +503,13 @@ impl Parser {
                         let e = self.expr()?;
                         self.eat(&Tok::RParen)?;
                         Ok(Expr::Read(Box::new(e)))
+                    }
+                    // `external(args…)` — the mossad foreign interface.
+                    "external" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let args = self.arg_list()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::External(args))
                     }
                     _ => {
                         if *self.peek() == Tok::LParen {

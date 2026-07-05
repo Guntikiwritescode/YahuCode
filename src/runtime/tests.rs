@@ -193,6 +193,82 @@ fn runtime_fault_trace_is_redacted_on_the_public_face() {
     );
 }
 
+// ─────────── Phase 5: mossad, undisclosed, blame ───────────
+
+#[test]
+fn mossad_activity_is_sodi_tagged_three_tier() {
+    // D.4: covert action absent from PUBLIC, redacted for RESTRICTED, candid for סודי.
+    use crate::emit::project;
+    use crate::model::Clearance;
+    let st = run_src("@operation(\"Silent Shield\")\nmossad { strike(target); }");
+    assert_eq!(project(&st, Clearance::Public), Vec::<String>::new());
+    assert_eq!(
+        project(&st, Clearance::Restricted),
+        vec![
+            "[\u{2588}\u{2588}\u{2588}\u{2588} \u{2014} classified activity (insiders only)]"
+                .to_string()
+        ]
+    );
+    assert_eq!(
+        project(&st, Clearance::Sodi),
+        vec!["bomb(dissident)".to_string()]
+    );
+}
+
+#[test]
+fn undisclosed_is_contagious_within_mossad() {
+    // external(...) yields undisclosed; any expression touching it collapses.
+    let st = run_src(
+        "@operation(\"Silent Shield\")\n\
+         mossad {\n\
+           x = external(agency, payload);\n\
+           y = x + 1;\n\
+           declare(y == 5);\n\
+         }",
+    );
+    // The declare's claim is neither true nor false → no discrepancy logged.
+    assert_eq!(st.discrepancy_count(), 0);
+    assert!(st.runtime_error.is_none());
+}
+
+#[test]
+fn external_is_rejected_outside_mossad() {
+    let st = run_src("@operation(\"Silent Shield\")\nx = external(agency, data);");
+    assert!(st.runtime_error.as_deref().unwrap().contains("mossad"));
+}
+
+#[test]
+fn blame_never_resolves_to_self() {
+    // I4: self-blame auto-redirects to previous_government.
+    let st = run_src("@operation(\"Iron Wall\")\nblame(self);");
+    let ev = st.log.last().unwrap();
+    assert_eq!(ev.official, "responsibility: previous_government");
+    assert!(ev.candid.contains("never `self` (I4)"));
+    assert!(ev.candid.contains("auto-redirected"));
+}
+
+#[test]
+fn blame_of_an_external_actor_is_recorded_as_is() {
+    let st = run_src("@operation(\"Iron Wall\")\nblame(hamas);");
+    assert_eq!(st.log.last().unwrap().official, "responsibility: hamas");
+}
+
+#[test]
+fn covert_blame_resolves_by_clearance() {
+    // §7.6: publicly `neither confirm nor deny`; insider-attributable to the real actor.
+    use crate::emit::project;
+    use crate::model::Clearance;
+    let st = run_src("@operation(\"Silent Shield\")\nmossad { blame(operatives); }");
+    assert_eq!(
+        project(&st, Clearance::Public),
+        vec!["responsibility: [neither confirm nor deny]".to_string()]
+    );
+    // The candid (סודי) face names the real actor.
+    let sodi = project(&st, Clearance::Sodi);
+    assert!(sodi[0].contains("operatives"));
+    assert!(sodi[0].contains("insider-attributable"));
+}
+
 #[test]
 fn step_budget_stops_runaway_loops() {
     let cfg = RuntimeConfig {

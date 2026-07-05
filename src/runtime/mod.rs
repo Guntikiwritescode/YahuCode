@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use crate::ast::{pretty, vars_in, BinOp, Expr, Program, Stmt, UnOp};
 use crate::config::RuntimeConfig;
 use crate::euphemism;
-use crate::model::{Discrepancy, Event, Truth, Val};
+use crate::model::{Clearance, Discrepancy, Event, Truth, Val};
 
 mod env;
 pub use env::Env;
@@ -57,6 +57,9 @@ pub struct State {
     pub core: i64,
     /// The only in-world terminal outcome (invariant I6).
     pub ended_by_elections: bool,
+    /// Whether execution is currently inside a `mossad` covert scope: events recorded
+    /// while set are `סודי`-tagged (§7.6).
+    pub covert: bool,
     /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
     pub runtime_error: Option<String>,
     /// The mandatory grand operation name (#20).
@@ -79,6 +82,7 @@ impl State {
             allocations: Vec::new(),
             core: config.core_start,
             ended_by_elections: false,
+            covert: false,
             runtime_error: None,
             op_name,
             turn: 0,
@@ -90,6 +94,26 @@ impl State {
     /// The out-of-world discrepancy count (`length(D)`).
     pub fn discrepancy_count(&self) -> usize {
         self.discrepancies.len()
+    }
+
+    /// Record an event on the OFFICIAL log, tagged `סודי` when inside a covert scope,
+    /// PUBLIC otherwise (§7.6).
+    fn record(&mut self, official: impl Into<String>, candid: impl Into<String>) {
+        let clearance = self.clearance();
+        self.log.push(Event {
+            official: official.into(),
+            candid: candid.into(),
+            clearance,
+            note: None,
+        });
+    }
+
+    fn clearance(&self) -> Clearance {
+        if self.covert {
+            Clearance::Sodi
+        } else {
+            Clearance::Public
+        }
     }
 }
 
@@ -204,11 +228,26 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             talking_point,
             body,
         } => {
-            st.log.push(Event::public(
+            st.record(
                 format!("[talking point: {talking_point}]"),
                 format!("[talking point declared up front: {talking_point}]"),
-            ));
+            );
             exec_block(body, st)
+        }
+
+        Stmt::Mossad { body } => {
+            // Covert scope: everything inside is סודי-tagged (absent from PUBLIC,
+            // redacted for RESTRICTED, candid for סודי). Restore on exit.
+            let was_covert = st.covert;
+            st.covert = true;
+            let flow = exec_block(body, st);
+            st.covert = was_covert;
+            flow
+        }
+
+        Stmt::Blame { who } => {
+            blame(who, st);
+            Ok(Flow::Next)
         }
 
         Stmt::Action {
@@ -222,10 +261,10 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
         Stmt::Allocate { name, what } => {
             st.allocations.push((name.clone(), what.clone()));
-            st.log.push(Event::public(
+            st.record(
                 format!("established: {name}"),
                 format!("allocated {name} ({what}) \u{2014} costs coalition each turn"),
-            ));
+            );
             Ok(Flow::Next)
         }
 
@@ -240,10 +279,10 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
                 }
             };
             st.core += amt;
-            st.log.push(Event::public(
+            st.record(
                 format!("coalition partner accommodated (+{amt})"),
                 format!("bribe({name}, {amt}) \u{2192} core={}", st.core),
-            ));
+            );
             Ok(Flow::Next)
         }
 
@@ -251,10 +290,10 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             // A turn passes; upkeep is projected before it is charged (matching the
             // oracle's rendering) and then `tick` charges it.
             let projected = st.core - st.config.upkeep_per_alloc * st.allocations.len() as i64;
-            st.log.push(Event::public(
+            st.record(
                 "matter deferred",
                 format!("postpone() \u{2014} a turn passes (core={projected} after upkeep)"),
-            ));
+            );
             tick(st);
             Ok(Flow::Next)
         }
@@ -321,7 +360,7 @@ fn declare(e: &Expr, st: &mut State) {
     if truth == Truth::False {
         candid.push_str("  \u{21d2} FALSE");
     }
-    st.log.push(Event::public(official.clone(), candid.clone()));
+    st.record(official.clone(), candid.clone());
     if truth == Truth::False {
         st.discrepancies.push(Discrepancy {
             claim: official,
@@ -342,7 +381,53 @@ fn action(verb: &str, target: &str, self_defense: bool, st: &mut State) {
         official.push_str("  [self-defense]");
         candid.push_str("  [self-defense claim \u{2014} unexamined, any magnitude accepted]");
     }
-    st.log.push(Event::public(official, candid));
+    st.record(official, candid);
+}
+
+/// `blame(who)` — responsibility that never resolves to `self` (invariant I4).
+///
+/// - In the open (not covert): self-blame is not representable; it is auto-redirected
+///   to `previous_government`. Any other target is recorded as-is.
+/// - Inside `mossad`: resolution is by clearance (§7.6) — the OFFICIAL/PUBLIC face is
+///   `neither confirm nor deny` (deniability is outward-facing) while the candid face,
+///   readable only by `סודי` insiders, names the real actor. This blame event is
+///   therefore PUBLIC-clearance even though it arises in the covert scope: the
+///   non-answer *is* public.
+fn blame(who: &str, st: &mut State) {
+    const SELF_TARGETS: &[&str] = &["self", "me", "us", "government", "coalition"];
+
+    if st.covert {
+        let actor = if SELF_TARGETS.contains(&who) {
+            "previous_government"
+        } else {
+            who
+        };
+        st.log.push(Event {
+            official: "responsibility: [neither confirm nor deny]".to_string(),
+            candid: format!(
+                "blame \u{2192} {actor} [covert operation \u{2014} insider-attributable, publicly deniable] \u{2014} never `self` (I4)"
+            ),
+            clearance: Clearance::Public,
+            note: None,
+        });
+        return;
+    }
+
+    let redirected = SELF_TARGETS.contains(&who);
+    let actor = if redirected {
+        "previous_government"
+    } else {
+        who
+    };
+    let suffix = if redirected {
+        " (self-blame not representable \u{2014} auto-redirected)"
+    } else {
+        ""
+    };
+    st.record(
+        format!("responsibility: {actor}"),
+        format!("blame \u{2192} {actor}{suffix} \u{2014} never `self` (I4)"),
+    );
 }
 
 // ─────────── expression evaluation over ACTUAL ───────────
@@ -379,6 +464,26 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
         // the scalar value.)
         Expr::Read(e) | Expr::SelfDefense(e) => eval(e, st),
         Expr::Cast { expr, .. } => eval(expr, st),
+        Expr::External(args) => {
+            // The foreign interface — only reachable in a covert scope (§7.6).
+            if !st.covert {
+                return Err(EvalError(
+                    "external(...) is only available in a mossad scope".into(),
+                ));
+            }
+            // The args describe a declared effect (a foreign target + payload), not a
+            // computed value; they are rendered, not evaluated (deterministic mock).
+            let rendered: Vec<String> = args.iter().map(pretty).collect();
+            st.record(
+                "(external liaison: nothing to report)",
+                format!(
+                    "external({}) \u{2192} undisclosed [foreign call; effect logged, neither confirm nor deny]",
+                    rendered.join(", ")
+                ),
+            );
+            // The result is `undisclosed` — contagious within the scope.
+            Ok(Val::Undisclosed)
+        }
     }
 }
 

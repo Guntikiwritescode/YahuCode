@@ -72,7 +72,11 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
                     ));
                 }
             }
-            Stmt::Hasbara { body, .. } => check_gate(body, true, funcs, diags),
+            // A hasbara OR a mossad scope satisfies the gate (a covert op is deniable —
+            // no public talking point needed).
+            Stmt::Hasbara { body, .. } | Stmt::Mossad { body } => {
+                check_gate(body, true, funcs, diags)
+            }
             Stmt::If {
                 then_body,
                 else_body,
@@ -98,7 +102,8 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::Allocate { .. }
             | Stmt::Bribe { .. }
             | Stmt::Postpone
-            | Stmt::Elections => {}
+            | Stmt::Elections
+            | Stmt::Blame { .. } => {}
         }
     }
 }
@@ -113,7 +118,9 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                     names.insert(name.clone());
                     walk(body, names);
                 }
-                Stmt::Hasbara { body, .. } | Stmt::While { body, .. } => walk(body, names),
+                Stmt::Hasbara { body, .. } | Stmt::Mossad { body } | Stmt::While { body, .. } => {
+                    walk(body, names)
+                }
                 Stmt::If {
                     then_body,
                     else_body,
@@ -130,7 +137,8 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Allocate { .. }
                 | Stmt::Bribe { .. }
                 | Stmt::Postpone
-                | Stmt::Elections => {}
+                | Stmt::Elections
+                | Stmt::Blame { .. } => {}
             }
         }
     }
@@ -188,6 +196,11 @@ fn check_disclosure(
             Stmt::Hasbara { body, .. } => {
                 check_disclosure(body, context, symtab, diags);
             }
+            Stmt::Mossad { body } => {
+                // Inside a covert scope the reading context is סודי, so classified
+                // values may be declared there without disclosure.
+                check_disclosure(body, Clearance::Sodi, symtab, diags);
+            }
             // These do not force ACTUAL into a lower-clearance record.
             Stmt::Return(_)
             | Stmt::ExprStmt(_)
@@ -195,7 +208,8 @@ fn check_disclosure(
             | Stmt::Allocate { .. }
             | Stmt::Bribe { .. }
             | Stmt::Postpone
-            | Stmt::Elections => {}
+            | Stmt::Elections
+            | Stmt::Blame { .. } => {}
         }
     }
 }
@@ -217,6 +231,8 @@ fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
         Expr::Cast { target, .. } => *target,
         // The universal cast (#7): always type-checks — the one sanctioned bypass.
         Expr::SelfDefense(_) => Clearance::Public,
+        // The foreign interface yields `undisclosed` — a covert (סודי) result.
+        Expr::External(_) => Clearance::Sodi,
     }
 }
 

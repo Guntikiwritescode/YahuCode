@@ -1,0 +1,4 @@
+@operation("Silent Shield")
+mossad {
+  strike(target);
+}
