@@ -24,6 +24,7 @@ const ENABLED: &[(&str, &str)] = &[
         "examples/03_rising_lion.yahu",
         "tests/golden/example_03.emit",
     ),
+    ("examples/04_iron_wall.yahu", "tests/golden/example_04.emit"),
     (
         "examples/05_silent_shield.yahu",
         "tests/golden/example_05.emit",
@@ -31,6 +32,18 @@ const ENABLED: &[(&str, &str)] = &[
     (
         "examples/06_guardian_of_the_walls.yahu",
         "tests/golden/example_06.emit",
+    ),
+    (
+        "examples/07_eternal_shield.yahu",
+        "tests/golden/example_07.emit",
+    ),
+    (
+        "examples/08_swords_of_iron.yahu",
+        "tests/golden/example_08.emit",
+    ),
+    (
+        "examples/09_eternal_vigilance.yahu",
+        "tests/golden/example_09.emit",
     ),
 ];
 

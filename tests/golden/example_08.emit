@@ -1,0 +1,9 @@
+@operation("Swords of Iron")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   TimelineError: 'occupation' is out of scope — history begins at t=0
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   reference to pre-t0 context 'occupation' thrown out as out-of-scope
+  ├─ framing (part of the spec — I8) ───────────────────────────
+  │   · #16 framing: the butt is the CLOCK-STARTING / context-erasure maneuver (documented via the Oct-2023 'did not happen in a vacuum' episode and the official reaction). The ~1,200 killed are never trivialized; context ≠ justification. [sourced]
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 0  (read-never-by-default)

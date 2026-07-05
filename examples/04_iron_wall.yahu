@@ -1,0 +1,7 @@
+@operation("Iron Wall")
+hasbara("security") {
+  (self_defense) strike(target);
+}
+raise(war_crime_allegation);
+whatabout(hamas);
+blame(self);

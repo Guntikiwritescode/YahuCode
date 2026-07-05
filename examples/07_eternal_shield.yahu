@@ -1,0 +1,3 @@
+@operation("Eternal Shield")
+access(settler_1);
+access(subject_1);

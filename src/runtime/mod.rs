@@ -53,6 +53,11 @@ pub struct State {
     /// Live coalition allocations `(name, what)`. Never freed (memory → coalition);
     /// each one costs upkeep per turn.
     pub allocations: Vec<(String, String)>,
+    /// The settlement region (#14): grow-only, never freed, upkeep-EXEMPT — the
+    /// pointed exception to the coalition model (§7.5).
+    pub settlements: Vec<(String, String)>,
+    /// Raised-but-unresolved errors (the deflection stack for #9).
+    pub pending_errors: Vec<String>,
     /// Coalition core support; upkeep is charged against it each turn.
     pub core: i64,
     /// The only in-world terminal outcome (invariant I6).
@@ -80,6 +85,8 @@ impl State {
             log: Vec::new(),
             discrepancies: Vec::new(),
             allocations: Vec::new(),
+            settlements: Vec::new(),
+            pending_errors: Vec::new(),
             core: config.core_start,
             ended_by_elections: false,
             covert: false,
@@ -105,6 +112,23 @@ impl State {
             candid: candid.into(),
             clearance,
             note: None,
+        });
+    }
+
+    /// Record an event carrying a framing note (invariant I8) — the framing text is
+    /// normative for the sensitive features (#15–#19).
+    fn record_noted(
+        &mut self,
+        official: impl Into<String>,
+        candid: impl Into<String>,
+        note: impl Into<String>,
+    ) {
+        let clearance = self.clearance();
+        self.log.push(Event {
+            official: official.into(),
+            candid: candid.into(),
+            clearance,
+            note: Some(note.into()),
         });
     }
 
@@ -247,6 +271,141 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
 
         Stmt::Blame { who } => {
             blame(who, st);
+            Ok(Flow::Next)
+        }
+
+        Stmt::Raise { name } => {
+            st.pending_errors.push(name.clone());
+            st.record(
+                format!("[!] {name} raised"),
+                format!("error raised: {name}"),
+            );
+            Ok(Flow::Next)
+        }
+
+        Stmt::Whatabout { name } => {
+            if let Some(e) = st.pending_errors.pop() {
+                st.record(
+                    format!("\u{2026}but what about {name}?"),
+                    format!("error '{e}' SUPPRESSED by pointing at {name} (never resolved)"),
+                );
+            } else {
+                st.record(
+                    format!("what about {name}?"),
+                    format!("pre-emptive deflection toward {name}"),
+                );
+            }
+            Ok(Flow::Next)
+        }
+
+        // #18 — ceasefire: reads like break, lowers to a no-op continue; nothing stops.
+        Stmt::Ceasefire => {
+            st.record_noted(
+                "ceasefire announced \u{2014} hostilities paused",
+                "ceasefire; \u{2192} lowered to no-op `continue`; loop resumes \u{2014} nothing actually stopped",
+                "#18 framing: the butt is the EUPHEMISTIC WORD \u{2014} a \"ceasefire\" that halts nothing (reads like break, runs like continue). WHO violates a ceasefire is deliberately UNENGAGED here \u{2014} the joke is the word, not an accusation. [verify \u{2014} unengaged by design]",
+            );
+            Ok(Flow::Next)
+        }
+
+        // #11 — ally concern: a no-op; nothing changes, support continues.
+        Stmt::Concern { who } => {
+            let (official, candid) = match who {
+                None => (
+                    "ally: \"we are deeply concerned\"".to_string(),
+                    "deeply_concerned() \u{2192} void; ACTUAL state UNCHANGED; military aid + diplomatic support CONTINUE (incl. a UN Security Council resolution vetoed) [sourced]".to_string(),
+                ),
+                Some(w) => (
+                    format!("ally: \"we are deeply concerned about {w}\""),
+                    format!("concern({w}) \u{2192} void; ACTUAL state UNCHANGED; support CONTINUES [sourced]"),
+                ),
+            };
+            st.record(official, candid);
+            Ok(Flow::Next)
+        }
+
+        // #19 — the resolved AntisemitismError. The false positive: criticism of
+        // government conduct universally miscast to an attack on identity.
+        Stmt::Criticism { subject } => {
+            st.record_noted(
+                "AntisemitismError: criticism re-cast as an attack on identity \u{2014} critic silenced",
+                format!("criticism(government: {subject}) MISCAST \u{2192} attack(identity); substance UNEXAMINED; alarm keyed on target==government, not on antisemitism"),
+                "#19 framing: antisemitism is REAL (present in ACTUAL, un-erased); the butt is the SELECTIVE deployment \u{2014} the alarm fires on government-critics and stays silent on the real thing. [sourced; contested]",
+            );
+            Ok(Flow::Next)
+        }
+
+        // #19 — the mandatory false negative: real antisemitism exists in ACTUAL and
+        // the deflection-alarm never fires on it (it keys on target==government).
+        Stmt::Antisemitism { incident } => {
+            st.env.set(
+                &format!("_antisemitism_{incident}"),
+                Val::Str("REAL, unaddressed".into()),
+            );
+            st.record_noted(
+                "(vigilance system: nothing to report)",
+                format!("REAL antisemitism [{incident}] occurred in ACTUAL \u{2014} the alarm did NOT fire (it only fires on government-criticism). Un-erased; unaddressed."),
+                "#19 framing: the false NEGATIVE that keeps the feature off the denialist trope \u{2014} real antisemitism exists in the system and the deflection-alarm ignores it.",
+            );
+            Ok(Flow::Next)
+        }
+
+        // #17 — differential access laundered to a proclamation of equal rights.
+        Stmt::Access { entity } => {
+            let cat = euphemism::category_of(entity);
+            st.record_noted(
+                format!("access({entity}) = full access \u{2014} equal rights (the only democracy in the region)"),
+                format!("access({entity}) = {}   [category {cat}]", euphemism::diff_description(cat)),
+                "#17 framing: inequality lives in ACTUAL (documented reality); the LIE is the proclamation of equality; the butt is the false claim + the system, never the people. Apartheid characterization is CONTESTED \u{2014} rejected by Israel and others. [sourced; contested]",
+            );
+            Ok(Flow::Next)
+        }
+
+        // #16 — Oct-7 t=0: a pre-t0 context symbol is ruled out of scope.
+        Stmt::Timeline { symbol } => {
+            if euphemism::is_pre_context(symbol) {
+                st.record_noted(
+                    format!("TimelineError: '{symbol}' is out of scope \u{2014} history begins at t=0"),
+                    format!("reference to pre-t0 context '{symbol}' thrown out as out-of-scope"),
+                    "#16 framing: the butt is the CLOCK-STARTING / context-erasure maneuver (documented via the Oct-2023 'did not happen in a vacuum' episode and the official reaction). The ~1,200 killed are never trivialized; context \u{2260} justification. [sourced]",
+                );
+            } else {
+                st.record(
+                    format!("timeline({symbol}): admissible"),
+                    format!("timeline({symbol}): within scope"),
+                );
+            }
+            Ok(Flow::Next)
+        }
+
+        // #13 — a commission engineered to resolve only after the matter is moot.
+        Stmt::EstablishCommission { name, subject } => {
+            st.record(
+                "commission of inquiry established \u{2014} findings to follow",
+                format!("establish_commission({subject}) \u{2192} Future scheduled to resolve only AFTER `{subject}` is garbage-collected; resolves when the matter is moot (too late to matter) [{name}: pending]"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // #14 — the grow-only, upkeep-exempt settlement region ("facts on the ground").
+        Stmt::Settlement { name, what } => {
+            st.settlements.push((name.clone(), what.clone()));
+            st.record(
+                "settlement established \u{2014} legalized; new neighborhood, residents welcomed",
+                format!("settlement({what}) \u{2192} grow-only region; expands into adjacent free memory (\"facts on the ground\"); NEVER freed; EXEMPT from coalition upkeep + GC (tick exemption, \u{00a7}7.5) [sourced]"),
+            );
+            Ok(Flow::Next)
+        }
+
+        // #15 — the human_shields exception-legalizer.
+        Stmt::HumanShields { verb, target } => {
+            let cverb = euphemism::candid_verb(verb);
+            let clabel = euphemism::candid_label(target);
+            st.record_noted(
+                "operation lawful \u{2014} civilian harm attributable to the other side's use of human shields; no violation",
+                format!("human_shields({cverb}({clabel})) \u{2014} exception [civilian_harm] SUPPRESSED; shield claim ASSERTED, never verified; responsibility reassigned onto the HARMED party (I4 redirect) \u{2014} the excuse converts victims into the cause"),
+                "#15 framing: the butt is the EXCUSE's elasticity + self-certification \u{2014} an unverifiable claim that auto-exonerates by relabeling those it harms as the cause. This is an ATTRIBUTED legal argument (analysts incl. Neve Gordon, Marc Weller, Nadia Boulos, via Al Jazeera / NPR) \u{2014} ONE SIDE of an active legal debate, not settled fact. Civilian status does not depend on the claim. Never endorsed. [sourced; contested]",
+            );
             Ok(Flow::Next)
         }
 

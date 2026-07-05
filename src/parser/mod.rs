@@ -134,10 +134,34 @@ impl Parser {
                 "hasbara" => self.hasbara(),
                 "mossad" => self.mossad(),
                 "blame" => self.blame(),
-                "let" => self.allocate(),
+                "let" => self.let_binding(),
                 "bribe" => self.bribe(),
                 "postpone" => self.postpone(),
                 "elections" => self.elections(),
+                "raise" => Ok(Stmt::Raise {
+                    name: self.kw_one_ident("raise")?,
+                }),
+                "whatabout" => Ok(Stmt::Whatabout {
+                    name: self.kw_one_ident("whatabout")?,
+                }),
+                "ceasefire" => self.ceasefire(),
+                "deeply_concerned" => self.deeply_concerned(),
+                "concern" => Ok(Stmt::Concern {
+                    who: Some(self.kw_one_ident("concern")?),
+                }),
+                "criticism" => Ok(Stmt::Criticism {
+                    subject: self.kw_one_ident("criticism")?,
+                }),
+                "antisemitism" => Ok(Stmt::Antisemitism {
+                    incident: self.kw_one_ident("antisemitism")?,
+                }),
+                "access" => Ok(Stmt::Access {
+                    entity: self.kw_one_ident("access")?,
+                }),
+                "timeline" => Ok(Stmt::Timeline {
+                    symbol: self.kw_one_ident("timeline")?,
+                }),
+                "human_shields" => self.human_shields(),
                 _ => match self.la(1) {
                     Tok::Eq => self.assign(),
                     Tok::LParen => self.call_or_action(),
@@ -283,20 +307,65 @@ impl Parser {
         Ok(Stmt::Declare(e))
     }
 
-    /// `let name = allocate(what);` — a coalition allocation.
-    fn allocate(&mut self) -> Result<Stmt, ParseError> {
+    /// A keyword taking a single identifier argument: `kw ( ident ) ;`.
+    fn kw_one_ident(&mut self, _kw: &str) -> Result<String, ParseError> {
+        self.next(); // the keyword
+        self.eat(&Tok::LParen)?;
+        let arg = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(arg)
+    }
+
+    /// `let name = (allocate|establish_commission|settlement)(what);`
+    fn let_binding(&mut self) -> Result<Stmt, ParseError> {
         self.next(); // 'let'
         let name = self.eat_ident()?;
         self.eat(&Tok::Eq)?;
-        let alloc = self.eat_ident()?;
-        if alloc != "allocate" {
-            return self.err("`let` bindings must be `allocate(...)`");
-        }
+        let kind = self.eat_ident()?;
         self.eat(&Tok::LParen)?;
         let what = self.eat_ident()?;
         self.eat(&Tok::RParen)?;
         self.eat(&Tok::Semi)?;
-        Ok(Stmt::Allocate { name, what })
+        match kind.as_str() {
+            "allocate" => Ok(Stmt::Allocate { name, what }),
+            "settlement" => Ok(Stmt::Settlement { name, what }),
+            "establish_commission" => Ok(Stmt::EstablishCommission {
+                name,
+                subject: what,
+            }),
+            other => self.err(format!(
+                "`let` binding must be allocate/settlement/establish_commission, got `{other}`"
+            )),
+        }
+    }
+
+    fn ceasefire(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'ceasefire'
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Ceasefire)
+    }
+
+    /// `deeply_concerned();` — an ally's no-op with no argument.
+    fn deeply_concerned(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'deeply_concerned'
+        self.eat(&Tok::LParen)?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::Concern { who: None })
+    }
+
+    /// `human_shields(verb(target));` — legalize a wrapped action.
+    fn human_shields(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'human_shields'
+        self.eat(&Tok::LParen)?;
+        let verb = self.eat_ident()?;
+        self.eat(&Tok::LParen)?;
+        let target = self.eat_ident()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::Semi)?;
+        Ok(Stmt::HumanShields { verb, target })
     }
 
     /// `bribe(name, amount);`

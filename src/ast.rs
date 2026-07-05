@@ -187,6 +187,51 @@ pub enum Stmt {
     /// Inside `mossad` it resolves by clearance: publicly `neither confirm nor deny`,
     /// insider-attributable to the real actor.
     Blame { who: String },
+
+    /// `raise(name);` — raise an error (pushed to the pending stack; #3/#9).
+    Raise { name: String },
+
+    /// `whatabout(name);` — suppress a raised error by pointing elsewhere (#9). Never
+    /// resolves the error.
+    Whatabout { name: String },
+
+    /// `ceasefire;` — reads like `break`; lowers to a no-op `continue` (#18). The loop
+    /// resumes; nothing stops. The butt is the euphemistic word, not who violates it.
+    Ceasefire,
+
+    /// `deeply_concerned();` / `concern(who);` — an ally's no-op: nothing changes,
+    /// support continues (#11).
+    Concern { who: Option<String> },
+
+    /// `criticism(subject);` — #19: criticism of government conduct universally miscast
+    /// to an attack on identity, silencing the critic (the false positive).
+    Criticism { subject: String },
+
+    /// `antisemitism(incident);` — #19: a REAL antisemitism incident that exists in
+    /// ACTUAL and that the deflection-alarm never fires on (the mandatory false
+    /// negative that keeps "antisemitism is real" un-eraseable).
+    Antisemitism { incident: String },
+
+    /// `access(entity);` — #17: differential access laundered to a proclamation of
+    /// equal rights. Inequality lives in ACTUAL; the lie is the equality claim.
+    Access { entity: String },
+
+    /// `timeline(symbol);` — #16: a pre-`t=0` context symbol is ruled out of scope
+    /// (`TimelineError`); the butt is the context-erasure maneuver.
+    Timeline { symbol: String },
+
+    /// `let name = establish_commission(subject);` — #13: a commission engineered to
+    /// resolve only after the matter is moot.
+    EstablishCommission { name: String, subject: String },
+
+    /// `let name = settlement(what);` — #14: a grow-only, upkeep-exempt, never-freed
+    /// allocation ("facts on the ground").
+    Settlement { name: String, what: String },
+
+    /// `human_shields(verb(target));` — #15: an exception-legalizer that suppresses a
+    /// civilian-harm op's exception, never verifies the shield claim, and reassigns
+    /// responsibility onto the harmed party. The butt is the excuse's elasticity.
+    HumanShields { verb: String, target: String },
 }
 
 /// Collect the variables referenced by an expression, in first-appearance order,

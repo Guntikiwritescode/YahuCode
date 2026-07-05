@@ -94,6 +94,14 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
                     ));
                 }
             }
+            // The Spokesperson still applies to the op wrapped by human_shields (#15).
+            Stmt::HumanShields { verb, .. } => {
+                if let Some(pr) = euphemism::plain_suggestion(verb) {
+                    diags.push(format!(
+                        "E-PLAINTERM: '{verb}' does not compile. did you mean `{pr}`?"
+                    ));
+                }
+            }
             // No action/gate concern.
             Stmt::Assign { .. }
             | Stmt::Declare(_)
@@ -103,7 +111,17 @@ fn check_gate(stmts: &[Stmt], gated: bool, funcs: &HashSet<String>, diags: &mut 
             | Stmt::Bribe { .. }
             | Stmt::Postpone
             | Stmt::Elections
-            | Stmt::Blame { .. } => {}
+            | Stmt::Blame { .. }
+            | Stmt::Raise { .. }
+            | Stmt::Whatabout { .. }
+            | Stmt::Ceasefire
+            | Stmt::Concern { .. }
+            | Stmt::Criticism { .. }
+            | Stmt::Antisemitism { .. }
+            | Stmt::Access { .. }
+            | Stmt::Timeline { .. }
+            | Stmt::EstablishCommission { .. }
+            | Stmt::Settlement { .. } => {}
         }
     }
 }
@@ -138,7 +156,18 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Bribe { .. }
                 | Stmt::Postpone
                 | Stmt::Elections
-                | Stmt::Blame { .. } => {}
+                | Stmt::Blame { .. }
+                | Stmt::Raise { .. }
+                | Stmt::Whatabout { .. }
+                | Stmt::Ceasefire
+                | Stmt::Concern { .. }
+                | Stmt::Criticism { .. }
+                | Stmt::Antisemitism { .. }
+                | Stmt::Access { .. }
+                | Stmt::Timeline { .. }
+                | Stmt::EstablishCommission { .. }
+                | Stmt::Settlement { .. }
+                | Stmt::HumanShields { .. } => {}
             }
         }
     }
@@ -209,7 +238,18 @@ fn check_disclosure(
             | Stmt::Bribe { .. }
             | Stmt::Postpone
             | Stmt::Elections
-            | Stmt::Blame { .. } => {}
+            | Stmt::Blame { .. }
+            | Stmt::Raise { .. }
+            | Stmt::Whatabout { .. }
+            | Stmt::Ceasefire
+            | Stmt::Concern { .. }
+            | Stmt::Criticism { .. }
+            | Stmt::Antisemitism { .. }
+            | Stmt::Access { .. }
+            | Stmt::Timeline { .. }
+            | Stmt::EstablishCommission { .. }
+            | Stmt::Settlement { .. }
+            | Stmt::HumanShields { .. } => {}
         }
     }
 }
