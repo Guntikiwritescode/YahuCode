@@ -1,21 +1,6 @@
 # YahuCode — Language Reference
 
-YahuCode is a satirical esoteric programming language. Its subject is the
-**messaging apparatus and wartime conduct of the Israeli government** — a
-government and its rhetoric, *never a people*. The comedy engine is the gap
-between what code *does* and what you are permitted to *call it*: euphemism,
-deflection, unaccountability, two-faced messaging.
-
-> **What the satire is aimed at.** YahuCode targets a government's behaviour and
-> its excuses. It is never about Jewish people, Judaism, or Hebrew-as-identity.
-> Hebrew appears **only** as the texture of officialdom — the way a state uses it
-> for classifications and operation names — never as a "secret language" and never
-> as the butt of a joke. The butt of every joke is the *euphemism*, the *excuse*, or
-> the *maneuver* — never the victims, who are kept out of every punchline. `OFFICIAL`
-> is always the prettier lie; `ACTUAL` is always the uglier truth. Contested legal
-> characterizations (genocide, apartheid) are depicted as **contested** — the
-> government's claim against documented reality — never narrated as settled fact in
-> the tool's own voice.
+YahuCode is a esoteric programming language.
 
 ---
 
@@ -29,8 +14,7 @@ side by side** plus a discrepancy count:
 - **discrepancies** — how many times the OFFICIAL story was provably false against
   what really happened.
 
-The run *is* the diff. The joke is not in any single line; it is in the distance
-between the two columns.
+The run *is* the diff and how much cognitive dissonance you can fit into a single program.
 
 Four ordinary compiler ideas are each replaced by a thematic mechanism that is
 load-bearing, not decorative:
@@ -201,7 +185,7 @@ the fall never runs. The footer reports whether the government is *still in powe
 
 ---
 
-## Covert scope: `mossad` and `undisclosed`
+## Covert scope: `Mossad` and `undisclosed`
 
 `mossad { .. }` opens a `סודי`-tagged covert scope. Everything recorded inside is
 absent from the PUBLIC record, a redacted placeholder at RESTRICTED, and candid at
@@ -226,61 +210,42 @@ uses them.
 
 - **#15 `human_shields(...)` — the exception-legalizer.** Suppresses whatever a
   civilian-harm operation throws; the shield claim is **never verified**; the caught
-  exception's responsibility is reassigned to whoever was harmed. The butt is the
-  excuse's elasticity and self-certification — the maneuver that converts victims
-  into the cause. Never endorsed.
+  exception's responsibility is reassigned to whoever was harmed.
 
 - **#16 Oct-7 `t=0` / `TimelineError`.** The clock is fixed at a single origin. Any
   symbol from prior context (`occupation`, `blockade`, `1948`, `1967`, `nakba`,
   `siege`) referenced in a `timeline(...)` op is ruled out of scope and raises a
-  `TimelineError`. The butt is the **clock-starting / context-erasure maneuver**,
-  never the dead. Context is not justification, and the lives lost are never
-  trivialized. This is the highest misread-risk feature — it has the least margin for
-  sloppy use.
+  `TimelineError`. The **clock-starting / context-erasure manoeuvre**,
+  never the dead.
 
 - **#17 Differential access.** Entities carry a category tag. In ACTUAL,
   `access(entity)` consults a differential table (some categories get full
   resources/permits/protections, others restricted — documented reality). In
   OFFICIAL, this is laundered to a uniform "equal — the only democracy in the region."
-  Polarity is mandatory: the inequality lives in ACTUAL; **the lie is the
-  proclamation of equality**. The butt is the false claim and the system, never the
-  people. The apartheid characterization is contested and is flagged as such.
+  Polarity is mandatory: the inequality lives in ACTUAL.
 
 - **#18 `ceasefire` — pause, not halt.** Reads like `break`; the parser lowers it to
-  a no-op `continue`; the loop resumes. The butt is the **euphemistic word**. The
-  question of who violates a ceasefire is left deliberately unengaged.
+  a no-op `continue`; the loop resumes.
 
 - **#19 `AntisemitismError` — a false positive paired with a false negative.** This is
   the most on-thesis feature, and both halves are mandatory:
   - **False positive:** `criticism(conduct)` of the government is universally miscast
     to `attack(identity)`, silencing the critic. The substance of the criticism is
-    left unexamined. The alarm keys on `target == government`, **not** on whether
-    anything is actually antisemitic.
-  - **False negative:** real antisemitism exists as a genuine value in ACTUAL, and
-    because the alarm keys on target-is-government, it **never fires on it**. OFFICIAL
-    proclaims vigilance; ACTUAL shows the alarm is uncorrelated with real
-    antisemitism; the diff exposes exactly that gap.
-
-  The false-negative half is what keeps "**antisemitism is real**" un-eraseable and
-  blocks any denialist reading: the real incident sits in ACTUAL, un-erased, while the
-  vigilance apparatus looks straight past it. The feature ridicules the bad-faith
-  deflection, never the reality of antisemitism.
+    left unexamined. The alarm keys on `target == government`.
 
 ---
 
-## Backlog stdlib — additional rhetorical maneuvers
+## Backlog stdlib — additional rhetorical manoeuvres
 
 Six further statements round out the standard library. Each is an ordinary,
 non-covert government-rhetoric move: it records **one PUBLIC event** whose OFFICIAL
-face is the prettier line and whose ACTUAL face is the candid mechanism. None of them
-branch, halt, or touch the coalition — the butt is always the *maneuver*, never a
-victim. The faces below are byte-for-byte what the runtime records.
+Face is the prettier line, and whose ACTUAL face is the actual mechanism.
 
 ### `proportionate(claim);` — the self-certifying "proportionate response"
 
 A proportionality assertion that applies no test. It passes at any magnitude — the
-claim certifies itself. Compare the universal `(self_defense)` cast: the joke is the
-escape hatch that never fails.
+claim certifies itself. Compare the universal `(self_defense)` cast: the
+escape hatch never fails.
 
 | OFFICIAL (what you may call it) | ACTUAL (what it is) |
 | --- | --- |
@@ -290,8 +255,7 @@ escape hatch that never fails.
 
 A number, two ways. OFFICIAL shows the lower press figure; ACTUAL shows the real one
 and names the maneuver — the smaller number is the one for the press. The figure stays
-**contested**: OFFICIAL is not corrected in place, it sits beside the truth (the
-lowballing maneuver).
+**contested**: OFFICIAL is not corrected in place, it sits beside the truth.
 
 | OFFICIAL | ACTUAL |
 | --- | --- |
@@ -341,8 +305,7 @@ Three collection types — an array, a list, and a map — share one philosophy:
 ACTUAL the real contents only ever **accrete**, and a covert or out-of-world observer
 can always reconstruct them. The list never deletes (I13), the registry never erases
 (I14), and any element withheld from the public record stays readable to the cleared
-(I15). Each has an OFFICIAL face that proclaims fairness and a `סודי` face that shows
-the skew — the collection *is* the diff, in miniature.
+(I15).
 
 ### Apportionment (array) — Feature E
 
@@ -389,9 +352,7 @@ record; it is only taken off the public list.
 
 ### Registry (map) — Feature G
 
-One proclaimed rule, differential routing underneath. This is a sensitive feature: it
-renders a normative `framing` note (I8), and the word "apartheid" is flagged
-**CONTESTED** (I7).
+One proclaimed rule, differential routing underneath.
 
 ```
 let r = registry("equal before the law");   // proclaim one uniform rule
@@ -402,17 +363,10 @@ equal_before_the_law(r)                      // predicate — usable in declare(
 ```
 
 The key is always a **case**, never an identity label (§9.4). OFFICIAL proclaims every
-case is "handled per due process"; the `סודי` face exposes that the same act in the
+case is "handled per due process"; the `סודי` face shows that the same act in the
 same place is routed to different court systems by assigned status. `revoke` hides a
 case from the public record but retains it in `סודי` (invariant I14) — like the list,
 the registry never erases.
-
-The framing note keeps the butt on **the state running two legal systems while
-proclaiming equal justice** — never on the people. The identities are the axis of the
-documented discrimination the satire exposes and the wronged party it defends, never
-the target of the joke and never the operative key. The dual-court fact is sourced;
-"apartheid" as a characterization of it is contested and is flagged, never stated as
-settled fact. See `docs/sources.md` anchor 17.
 
 ### The example programs
 
@@ -421,7 +375,7 @@ settled fact. See `docs/sources.md` anchor 17.
 - `examples/18_eternal_justice.yahu` — Registry (G).
 - `examples/19_guardian_of_transparency.yahu` — all three at once, plus element-level
   disclosure: an under-cleared reader sees `[REDACTED]` slots and public lengths while
-  the `סודי` reader reconstructs the full contents (I15).
+  The `סודי` reader reconstructs the full contents (I15).
 
 ---
 
@@ -466,17 +420,17 @@ hasbara("self-defense") {
 }
 ```
 
-`neutralize` is the sanctioned PR verb; `target` resolves to its candid label
-`dissident`; the candid form `murder(dissident)` is euphemized one-way to
+`neutralise` is the sanctioned PR verb; `target` resolves to its candid label
+`dissident`; the candid form `murder(dissident)` is euphemised one-way to
 `accident occur(protester)` for the OFFICIAL face. Running it prints both columns:
 
 ```
 @operation("Protective Edge")
   ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
-  │   [talking point: self-defense]
+  │   [talking point: self-defence]
   │   accident occur(protester)
   ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
-  │   [talking point declared up front: self-defense]
+  │   [talking point declared up front: self-defence]
   │   murder(dissident)
   ├─ coalition: core=3 · still in power (no halt)
   └─ discrepancies: 0  (read-never-by-default)
@@ -489,32 +443,7 @@ Read across the two faces:
 | `accident occur(protester)` | `murder(dissident)` |
 
 The program does not terminate on its own, reports no in-world discrepancy, and the
-government stays in power. Everything scandalous is *legal*, *sanctioned*, and
-*narrated* — which is the entire point. The gap between the two columns is the
-satire.
+government stays in power. Everything is *legal*, *sanctioned*, and
+*narrated*.
 
----
-
-## Deliberately excluded
-
-Going far is the comedic *ambition*; dropping the aim is never on the table. Several
-§8 ideas were considered and **left out** because they cross the absolute guardrails —
-the butt must stay on the *government maneuver*, never on Judaism, Hebrew-as-identity,
-or the victims.
-
-- **Chief-Rabbinate / religious-practice satire** and **Hebrew-as-a-lock /
-  password-wall.** Both slide the joke off the government and onto Jewish identity or
-  Hebrew-as-a-secret-language — across the identity line. Hebrew appears here **only**
-  as the texture of officialdom (classifications, operation names), never as a lock,
-  a gate, or a punchline.
-- **A map/grid execution model.** A spatial "board" of territory is victim-adjacent —
-  it risks turning displacement into a game mechanic. Excluded.
-- **`undisclosed` as a universal default.** The neither-confirm-nor-deny value stays
-  **mossad-scoped**: a covert-deniability device, never a language-wide default.
-  Making everything `undisclosed` would erase the ACTUAL truth the whole tool exists
-  to keep un-eraseable.
-
-The rule is the one that governs every feature above: the butt is on the *maneuver*,
-**OFFICIAL is the prettier lie and ACTUAL the uglier truth**, and contested
-characterizations **stay contested**. Comedic ambition can go far; it never drops the
-aim.
+Have fun with YahuCode!
