@@ -1,7 +1,6 @@
 # YahuCode
 
-It is a novel little machine, not a reskin. Four ordinary compiler ideas
-are each replaced by a thematic mechanism that is load-bearing:
+YahuCode consists of four ordinary compiler ideas that are each replaced by a thematic mechanism to create a unique system.
 
 - **Types → clearance/audience.** A value's type is *who may see it*
   (`PUBLIC`, `RESTRICTED`, `סודי`). A type error is a **disclosure**.
@@ -38,7 +37,7 @@ Requires a stable Rust toolchain (developed against 1.94). See
 
 ## Host language
 
-Rust — its `match` is exhaustive by default, which is the project's primary defense
+Rust — its `match` is exhaustive by default, which is the project's primary defence
 against unhandled-case bugs (`docs/cc-handoff.md` §12, Appendix H). The core
 taxonomies (clearance, provenance, truth, node kinds, value payloads) are **closed
 sum types**, and no `_ =>` arm matches over one of them in the checker, evaluator, or
