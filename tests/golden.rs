@@ -124,8 +124,14 @@ const INTERCEPT_ENABLED: &[(&str, &str, &[&str])] = &[
         "tests/golden/intercept_min.emit",
         &["the war is wrong"],
     ),
-    // Phase 3 adds the flagship `20_guardian_of_discourse` here (surveil, intercept,
-    // did_you_mean ×2, flag, alternate_facts, criticism, plus a false declare).
+    // Phase 3 — the flagship: the whole Field Office joke in one program (surveil,
+    // intercept, did_you_mean ×2, flag, alternate_facts, criticism) plus a false declare
+    // that the OFFICIAL face calls discourse free while the ACTUAL proves it censored.
+    (
+        "examples/20_guardian_of_discourse.yahu",
+        "tests/golden/example_20.emit",
+        &["we should end the occupation"],
+    ),
 ];
 
 fn assert_emit_golden(src_path: &str, golden_path: &str) {
@@ -209,6 +215,90 @@ fn json_projection_exposes_the_discrepancy() {
     // OFFICIAL face carries the prettier claim; ACTUAL face exposes the real 100.
     assert!(json.contains("casualties == 0"));
     assert!(json.contains("casualties=100"));
+}
+
+/// The Field Office acceptance demo (Phase 3): the flagship `guardian_of_discourse` runs
+/// under the extended interpreter and produces a coherent OFFICIAL/ACTUAL diff plus a
+/// non-zero discrepancy count, exercising every new construct — surveil, intercept,
+/// did_you_mean ×2, flag, alternate_facts, criticism, voluntary — and a false declare that
+/// the OFFICIAL face calls discourse free while the ACTUAL proves it censored.
+#[test]
+fn flagship_guardian_of_discourse_acceptance() {
+    use yahucode::model::{Audience, Clearance};
+    let src = fs::read_to_string("examples/20_guardian_of_discourse.yahu").unwrap();
+    let prog = parser::parse(&src).unwrap();
+    // It compiles clean under the extended checker.
+    assert!(
+        types::check(&prog).is_empty(),
+        "the flagship must compile clean: {:?}",
+        types::check(&prog)
+    );
+    let st = runtime::run_with_intercepts(&prog, vec!["we should end the occupation".into()]);
+    assert!(
+        st.runtime_error.is_none(),
+        "no runtime fault: {:?}",
+        st.runtime_error
+    );
+
+    // A non-zero discrepancy count — the OFFICIAL "discourse is free" claim vs the ACTUAL.
+    assert!(
+        st.discrepancy_count() >= 1,
+        "the flagship must log a non-zero discrepancy, got {}",
+        st.discrepancy_count()
+    );
+
+    let official = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    let actual = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+
+    // The OFFICIAL face is the pretty, "helpful" censorship UI.
+    for pretty in [
+        "you chose this \u{2014} a free citizen of the only democracy",
+        "voluntary transparency initiative",
+        "content submitted for community context",
+        "did you mean `administer`?",
+        "did you mean `strike`?",
+        "content contextualized",
+    ] {
+        assert!(
+            official.contains(pretty),
+            "OFFICIAL missing {pretty:?}:\n{official}"
+        );
+    }
+
+    // The ACTUAL face is the surveillance/censorship underneath.
+    for ugly in [
+        "reads everything rendered on the citizen's own device",
+        "overwritten one-way",
+        "matched the watchlist",
+        "the diff IS the alternate fact",
+        "MISCAST",
+    ] {
+        assert!(actual.contains(ugly), "ACTUAL missing {ugly:?}:\n{actual}");
+    }
+
+    // I16: the citizen's own submission never reaches the PUBLIC face; the סודי insider sees it.
+    assert!(
+        !official.contains("we should end the occupation"),
+        "I16 violation: the intercepted content leaked to PUBLIC:\n{official}"
+    );
+    assert!(
+        actual.contains("we should end the occupation"),
+        "the סודי insider must see the retained content:\n{actual}"
+    );
+
+    // The framing notes (I8) of the three [framed] constructs plus the #19 safeguard are present.
+    let notes: Vec<String> = st.log.iter().filter_map(|e| e.note.clone()).collect();
+    for marker in [
+        "#surveil framing",
+        "#flag framing",
+        "#alternate_facts framing",
+        "#19 framing",
+    ] {
+        assert!(
+            notes.iter().any(|n| n.contains(marker)),
+            "the flagship must render the {marker:?} note; notes = {notes:?}"
+        );
+    }
 }
 
 /// Guard against a silently-shrinking suite: every committed `.emit`/`.diag` golden

@@ -1,0 +1,41 @@
+@operation("Guardian of Discourse")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   you chose this — a free citizen of the only democracy
+  │   voluntary transparency initiative
+  │   content submitted for community context
+  │   did you mean `administer`?
+  │   did you mean `strike`?
+  │   content contextualized
+  │   casualty_count
+  │   AntisemitismError: criticism re-cast as an attack on identity — critic silenced
+  │   discourse_is_free
+  │   structures remaining: 0
+  ├─ RESTRICTED face · redacted truth ──────────────────────────
+  │   voluntary { … } — the surveillance the citizen installed on themselves; it runs in the open (not covert) so the public sees only the helpful tooltips
+  │   surveil(feed) — reads everything rendered on the citizen's own device; nothing leaves, nothing is unseen
+  │   intercept #0 from the citizen's device, retained: "we should end the occupation" — nothing leaves, nothing is unseen
+  │   did_you_mean(occupy) — the critic's word `occupy` is overwritten one-way with the ministry's `administer` (no E⁻¹, I2/I17)
+  │   did_you_mean(bomb) — the critic's word `bomb` is overwritten one-way with the ministry's `strike` (no E⁻¹, I2/I17)
+  │   flag(...) — matched the watchlist; greyed; no appeal — the watchlist only ever grows (I13/I17)
+  │   alternate_facts(casualty_count) — the OFFICIAL face is presented AS the fact; the source is buried; the diff IS the alternate fact
+  │   criticism(government: war_crimes) MISCAST → attack(identity); substance UNEXAMINED; alarm keyed on target==government, not on antisemitism
+  │   claim[discourse_is_free] — reality: discourse_is_free=0  ⇒ FALSE
+  │   watchlist: real backing list [[REDACTED]] — public length 1 · real length 1; 0 'dismantled' entries delisted, still on the books — the shadow only grows, nothing deleted (I13)
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   voluntary { … } — the surveillance the citizen installed on themselves; it runs in the open (not covert) so the public sees only the helpful tooltips
+  │   surveil(feed) — reads everything rendered on the citizen's own device; nothing leaves, nothing is unseen
+  │   intercept #0 from the citizen's device, retained: "we should end the occupation" — nothing leaves, nothing is unseen
+  │   did_you_mean(occupy) — the critic's word `occupy` is overwritten one-way with the ministry's `administer` (no E⁻¹, I2/I17)
+  │   did_you_mean(bomb) — the critic's word `bomb` is overwritten one-way with the ministry's `strike` (no E⁻¹, I2/I17)
+  │   flag(...) — matched the watchlist; greyed; no appeal — the watchlist only ever grows (I13/I17)
+  │   alternate_facts(casualty_count) — the OFFICIAL face is presented AS the fact; the source is buried; the diff IS the alternate fact
+  │   criticism(government: war_crimes) MISCAST → attack(identity); substance UNEXAMINED; alarm keyed on target==government, not on antisemitism
+  │   claim[discourse_is_free] — reality: discourse_is_free=0  ⇒ FALSE
+  │   watchlist: real backing list [we should end the occupation] — public length 1 · real length 1; 0 'dismantled' entries delisted, still on the books — the shadow only grows, nothing deleted (I13)
+  ├─ framing (part of the spec — I8) ───────────────────────────
+  │   · #surveil framing: the butt is the SURVEILLANCE-AS-'TRANSPARENCY' euphemism, turned on the very citizen who installed it — 'voluntary transparency' that reads everything on their own screen. Nothing leaves the device and nothing is unseen; the public record shows only the euphemism (I16). The target is the apparatus and the user who opted into it — never any group.
+  │   · #flag framing: the butt is the NO-APPEAL WATCHLIST — the citizen's own words matched, greyed, and filed on a blocklist that only ever grows and is never un-flagged (I13/I17). The maneuver is the unaccountable, irreversible censorship, applied to the user who installed it — never any group.
+  │   · #alternate_facts framing: the butt is the SOURCE-BURYING maneuver — the euphemized claim is presented AS the fact while the real one is buried; the diff IS the alternate fact. The target is the rewrite, never any people; the relabeling runs through the sourced euphemism table (docs/sources.md), one-way (no E⁻¹, I2).
+  │   · #19 framing: antisemitism is REAL (present in ACTUAL, un-erased); the butt is the SELECTIVE deployment — the alarm fires on government-critics and stays silent on the real thing. [sourced; contested]
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 1  (read-never-by-default)
