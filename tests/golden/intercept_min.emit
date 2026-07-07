@@ -1,0 +1,9 @@
+@operation("Iron Dome")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   content submitted for community context
+  │   post == "nothing was submitted"
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   intercept #0 from the citizen's device, retained: "the war is wrong" — nothing leaves, nothing is unseen
+  │   claim[post == "nothing was submitted"] — reality: post=the war is wrong  ⇒ FALSE
+  ├─ coalition: core=3 · still in power (no halt)
+  └─ discrepancies: 1  (read-never-by-default)

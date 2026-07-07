@@ -24,3 +24,24 @@ pub mod model;
 pub mod parser;
 pub mod runtime;
 pub mod types;
+
+/// The library run entry — parse → static-check → run → emit the structured
+/// `{official, actual, discrepancies, …}` JSON (the same projection the CLI's `--json`
+/// flag produces). `intercepts` seeds the Field Office intake channel (`intercept(n)`);
+/// the WASM wrapper crate calls this so the browser shim can drive YahuCode without a
+/// filesystem or a process. Reuses the existing emit/JSON path — it does not duplicate it.
+///
+/// On a parse or compile failure it returns a structured `{"error", "diagnostics"}` object
+/// (via [`emit::error_json`]) so a JS caller always receives valid JSON.
+pub fn run_json(src: &str, intercepts: Vec<String>) -> String {
+    let program = match parser::parse(src) {
+        Ok(p) => p,
+        Err(e) => return emit::error_json(&e.to_string(), &[]),
+    };
+    let diags = types::check(&program);
+    if !diags.is_empty() {
+        return emit::error_json("program does not compile", &diags);
+    }
+    let st = runtime::run_with_intercepts(&program, intercepts);
+    emit::to_json(&st)
+}

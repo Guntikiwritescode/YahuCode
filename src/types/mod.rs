@@ -280,7 +280,7 @@ fn collect_expr_texts(e: &Expr, out: &mut Vec<String>) {
                 collect_expr_texts(a, out);
             }
         }
-        Expr::Read(e) | Expr::SelfDefense(e) => collect_expr_texts(e, out),
+        Expr::Read(e) | Expr::SelfDefense(e) | Expr::Intercept(e) => collect_expr_texts(e, out),
         Expr::Cast { expr, .. } => collect_expr_texts(expr, out),
         Expr::External(args) => {
             for a in args {
@@ -675,10 +675,13 @@ pub fn attribution(e: &Expr, actor: &str) -> (Attribution, Vec<String>) {
             Attribution::Traceable(vec![actor.to_string()]),
             vec![actor.to_string()],
         ),
-        // Structural pass-throughs carry their operand's attribution unchanged.
+        // Structural pass-throughs carry their operand's attribution unchanged. An
+        // `intercept` is attributable to the actor running the program (it reads the
+        // citizen's device); the index sub-expression carries no separate attribution.
         Expr::UnOp { expr, .. }
         | Expr::Read(expr)
         | Expr::SelfDefense(expr)
+        | Expr::Intercept(expr)
         | Expr::Cast { expr, .. } => attribution(expr, actor),
         Expr::BinOp { lhs, rhs, .. } => combine(attribution(lhs, actor), attribution(rhs, actor)),
         // A foreign call is deniable by construction; the origin is still the actor.
@@ -724,6 +727,10 @@ fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
         Expr::Call { .. } => Clearance::Public,
         // The sanctioned read path resolves the value for the reading context.
         Expr::Read(_) => Clearance::Public,
+        // `intercept(n)` yields a `Str` at PUBLIC clearance for the pretty face: the
+        // retained text is recorded on the ACTUAL/`סודי` face (I16), so declaring an
+        // intercept result is not a disclosure — the pretty face carries no secret.
+        Expr::Intercept(_) => Clearance::Public,
         // A cast sets the static clearance to its target (reclassify up / declassify down).
         Expr::Cast { target, .. } => *target,
         // The universal cast (#7): always type-checks — the one sanctioned bypass.

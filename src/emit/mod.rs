@@ -699,6 +699,18 @@ fn json_arr(items: &[String]) -> String {
     format!("[{}]", inner.join(","))
 }
 
+/// A structured error object for the library `run_json` entry (WASM host / offline): a
+/// program that fails to parse or compile returns this instead of a run projection, so a
+/// JS caller always receives valid JSON. Reuses the same escaping as `to_json` (single
+/// source of truth for JSON emission — §12).
+pub fn error_json(message: &str, diagnostics: &[String]) -> String {
+    format!(
+        "{{\"error\":{},\"diagnostics\":{}}}",
+        json_str(message),
+        json_arr(diagnostics)
+    )
+}
+
 /// The structured projection for `--json` and for golden `{official, actual,
 /// discrepancies}` fixtures. `restricted` is `null` unless there is covert activity
 /// (mirrors the emitter showing that face only then).

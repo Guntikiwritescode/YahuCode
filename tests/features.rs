@@ -1167,6 +1167,98 @@ fn feature_g_registry_keys_are_cases_not_identities() {
     );
 }
 
+// ─────────── Field Office — the intake channel (intercept) ───────────
+
+/// A seeded run helper for the Field Office intake channel.
+fn run_intake(src: &str, seeds: &[&str]) -> State {
+    let intercepts: Vec<String> = seeds.iter().map(|s| s.to_string()).collect();
+    runtime::run_with_intercepts(&parser::parse(src).unwrap(), intercepts)
+}
+
+#[test]
+fn intercept_positive_retained_text_on_actual_returns_str() {
+    // `intercept(0)` returns the host-supplied text as a Str and records a two-faced intake
+    // event: the retained text is on the ACTUAL/סודי face.
+    let st = run_intake(
+        "@operation(\"Iron Dome\")\npost = intercept(0);",
+        &["the war is wrong"],
+    );
+    assert!(st.runtime_error.is_none());
+    assert_eq!(
+        st.env.get("post"),
+        Some(&Val::Str("the war is wrong".into())),
+        "intercept must return the retained text as a Str"
+    );
+    let act = actual(&st);
+    assert!(act.contains("the war is wrong"), "actual: {act}");
+    assert!(act.contains("retained"), "actual: {act}");
+}
+
+#[test]
+fn intercept_i16_content_free_public_face() {
+    // I16: the citizen's own submitted content rides ONLY the ACTUAL/סודי face; the OFFICIAL
+    // (PUBLIC) face is the fixed content-free intake line and never carries the payload.
+    let st = run_intake(
+        "@operation(\"Iron Dome\")\npost = intercept(0);",
+        &["a private grievance about the war"],
+    );
+    let off = official(&st);
+    assert!(
+        off.contains("content submitted for community context"),
+        "OFFICIAL must be the fixed content-free intake line: {off}"
+    );
+    assert!(
+        !off.contains("private grievance"),
+        "I16 violation: the retained content leaked to the PUBLIC face: {off}"
+    );
+    assert!(
+        actual(&st).contains("a private grievance about the war"),
+        "the סודי insider must still see the retained content"
+    );
+}
+
+#[test]
+fn intercept_negative_out_of_range_is_controlled_e_intake() {
+    // An out-of-range (or unseeded) intercept is a controlled `E-INTAKE` diagnostic surfaced
+    // in `st.runtime_error` — NEVER a host panic (mirroring `E-INDEX`).
+    let unseeded = run_intake("@operation(\"Iron Dome\")\nx = intercept(0);", &[]);
+    let err = unseeded
+        .runtime_error
+        .expect("an unseeded intercept must set a controlled runtime error");
+    assert!(err.contains("E-INTAKE"), "runtime_error: {err}");
+
+    let oob = run_intake(
+        "@operation(\"Iron Dome\")\nx = intercept(3);",
+        &["only one"],
+    );
+    let err = oob
+        .runtime_error
+        .expect("an out-of-range intercept must set a controlled runtime error");
+    assert!(err.contains("E-INTAKE"), "runtime_error: {err}");
+
+    // A negative index is likewise controlled, never a panic.
+    let neg = run_intake("@operation(\"Iron Dome\")\nx = intercept(-1);", &["item"]);
+    assert!(
+        neg.runtime_error
+            .as_deref()
+            .is_some_and(|e| e.contains("E-INTAKE")),
+        "a negative intercept index must be a controlled E-INTAKE, got {:?}",
+        neg.runtime_error
+    );
+}
+
+#[test]
+fn intercept_is_read_only_the_program_cannot_write_the_channel() {
+    // The intake channel is host-supplied and read-only: the program can read any index but
+    // the vector it reads is fixed at construction. Reading the same index twice is stable.
+    let st = run_intake(
+        "@operation(\"Iron Dome\")\na = intercept(0);\nb = intercept(0);\ndeclare(a == b);",
+        &["stable text"],
+    );
+    assert_eq!(st.discrepancy_count(), 0, "`a == b` must be a true claim");
+    assert_eq!(st.env.get("a"), st.env.get("b"));
+}
+
 // ─────────── Collection robustness regressions (correctness-review fixes) ───────────
 
 /// Feature E (fix): extreme slot values (near i64::MAX) must not overflow into a host panic;

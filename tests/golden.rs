@@ -112,6 +112,22 @@ const COMPILE_ENABLED: &[(&str, &str)] = &[(
     "tests/golden/example_01.diag",
 )];
 
+/// Intake-seeded examples (Field Office): `(source, emit golden, intercept seeds)`. These
+/// use the `intercept(n)` intake channel, so they run through `run_with_intercepts` with
+/// the host-supplied seeds rather than the empty-channel `run` the plain goldens use.
+const INTERCEPT_ENABLED: &[(&str, &str, &[&str])] = &[
+    // Phase 1 — a minimal intake program: the OFFICIAL face is the content-free intake
+    // line, the retained text rides only the ACTUAL face (I16), and a false declare about
+    // the submission leaves exactly one discrepancy.
+    (
+        "examples/intercept_min.yahu",
+        "tests/golden/intercept_min.emit",
+        &["the war is wrong"],
+    ),
+    // Phase 3 adds the flagship `20_guardian_of_discourse` here (surveil, intercept,
+    // did_you_mean ×2, flag, alternate_facts, criticism, plus a false declare).
+];
+
 fn assert_emit_golden(src_path: &str, golden_path: &str) {
     let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
     let golden =
@@ -120,6 +136,17 @@ fn assert_emit_golden(src_path: &str, golden_path: &str) {
     let st = runtime::run(&prog);
     // Golden fixtures carry a trailing newline (as written by the generator and by
     // the CLI's `println!`); `emit()` itself returns no trailing newline.
+    let got = format!("{}\n", emit::emit(&st));
+    assert_eq!(got, golden, "emit mismatch for {src_path}");
+}
+
+fn assert_intercept_emit_golden(src_path: &str, golden_path: &str, seeds: &[&str]) {
+    let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
+    let golden =
+        fs::read_to_string(golden_path).unwrap_or_else(|e| panic!("read {golden_path}: {e}"));
+    let prog = parser::parse(&src).unwrap_or_else(|e| panic!("parse {src_path}: {e}"));
+    let intercepts: Vec<String> = seeds.iter().map(|s| s.to_string()).collect();
+    let st = runtime::run_with_intercepts(&prog, intercepts);
     let got = format!("{}\n", emit::emit(&st));
     assert_eq!(got, golden, "emit mismatch for {src_path}");
 }
@@ -149,6 +176,16 @@ fn all_enabled_goldens_match_the_oracle() {
     }
     for (src, golden) in COMPILE_ENABLED {
         assert_diag_golden(src, golden);
+    }
+    for (src, golden, seeds) in INTERCEPT_ENABLED {
+        assert_intercept_emit_golden(src, golden, seeds);
+        // Every runnable intake golden must also compile clean (no diagnostics).
+        let src_text = fs::read_to_string(src).unwrap();
+        let prog = parser::parse(&src_text).unwrap();
+        assert!(
+            types::check(&prog).is_empty(),
+            "{src} unexpectedly produced diagnostics"
+        );
     }
     for (src, golden) in PRESS_ENABLED {
         let src_text = fs::read_to_string(src).unwrap();
@@ -185,12 +222,14 @@ fn enabled_examples_are_complete() {
         .filter(|p| p.ends_with(".emit") || p.ends_with(".diag") || p.ends_with(".press"))
         .collect();
     fixtures.sort();
-    let referenced: Vec<String> = ENABLED
+    let mut referenced: Vec<String> = ENABLED
         .iter()
         .chain(COMPILE_ENABLED.iter())
         .chain(PRESS_ENABLED.iter())
         .map(|(_, g)| g.to_string())
         .collect();
+    // The intake-seeded goldens live alongside the others and must also be referenced.
+    referenced.extend(INTERCEPT_ENABLED.iter().map(|(_, g, _)| g.to_string()));
     for f in &fixtures {
         assert!(
             referenced.contains(f),

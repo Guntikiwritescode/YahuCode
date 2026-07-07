@@ -912,6 +912,15 @@ impl Parser {
                         self.eat(&Tok::RParen)?;
                         Ok(Expr::Read(Box::new(e)))
                     }
+                    // `intercept(n)` — the intake channel (Field Office): read the n-th
+                    // host-supplied item off the citizen's device. Dispatched here in the
+                    // primary-expression `Ident` arm, exactly like `read`/`external`/`via`.
+                    "intercept" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let e = self.expr()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Intercept(Box::new(e)))
+                    }
                     // `external(args…)` — the mossad foreign interface.
                     "external" if *self.peek() == Tok::LParen => {
                         self.next();

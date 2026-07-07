@@ -37,6 +37,12 @@ pub struct Law {
 /// chain (Feature C): always the last element, never removed (invariant I11).
 const ACTOR: &str = "us";
 
+/// The fixed, content-free OFFICIAL face of an `intercept(n)` intake event (Field Office).
+/// A single source of truth: the citizen's retained text lives only on the ACTUAL/`סודי`
+/// face, so a PUBLIC reader — who reads only this OFFICIAL line — never sees the payload
+/// (invariant I16). It must never be constructed with the retained text interpolated in.
+const INTERCEPT_OFFICIAL: &str = "content submitted for community context";
+
 mod env;
 pub use env::Env;
 
@@ -106,6 +112,12 @@ pub struct State {
     pub meta_ledger: Vec<MetaEntry>,
     /// A recorded runtime error (not an in-world halt); surfaced by the CLI.
     pub runtime_error: Option<String>,
+    /// The intake vector (Field Office): host-supplied items off the citizen's own
+    /// device, read by `intercept(n)`. **Set once at construction, never mutated by the
+    /// program** — the program can only READ this channel, never write it. Empty by
+    /// default (offline runs seed it via the CLI `--intercept` flag; the WASM host passes
+    /// it to `run_json`). The retained text rides only the ACTUAL/`סודי` face (I16).
+    pub intercepts: Vec<String>,
     /// The mandatory grand operation name (#20).
     pub op_name: String,
     /// Turn counter.
@@ -120,7 +132,7 @@ pub struct State {
 }
 
 impl State {
-    fn new(op_name: String, config: RuntimeConfig) -> Self {
+    fn new(op_name: String, config: RuntimeConfig, intercepts: Vec<String>) -> Self {
         State {
             env: Env::new(),
             collection_order: Vec::new(),
@@ -139,6 +151,7 @@ impl State {
             law: Law::default(),
             meta_ledger: Vec::new(),
             runtime_error: None,
+            intercepts,
             op_name,
             turn: 0,
             steps: 0,
@@ -244,14 +257,27 @@ impl State {
     }
 }
 
-/// Run a program with the default runtime config.
+/// Run a program with the default runtime config and no intake channel.
 pub fn run(program: &Program) -> State {
-    run_with_config(program, RuntimeConfig::default())
+    run_full(program, RuntimeConfig::default(), Vec::new())
 }
 
-/// Run a program with an explicit config.
+/// Run a program with an explicit config and no intake channel.
 pub fn run_with_config(program: &Program, config: RuntimeConfig) -> State {
-    let mut st = State::new(program.op_name.clone(), config);
+    run_full(program, config, Vec::new())
+}
+
+/// Run a program with a host-supplied intake channel (Field Office): the `intercepts`
+/// vector seeds `intercept(n)`. Used by the CLI `--intercept` flag and the WASM
+/// `run_json` entry. Default runtime config.
+pub fn run_with_intercepts(program: &Program, intercepts: Vec<String>) -> State {
+    run_full(program, RuntimeConfig::default(), intercepts)
+}
+
+/// The single run path: build the machine (seeding the intake channel), drive the body,
+/// and record a redacted runtime trace on an unhandled evaluation fault.
+fn run_full(program: &Program, config: RuntimeConfig, intercepts: Vec<String>) -> State {
+    let mut st = State::new(program.op_name.clone(), config, intercepts);
     if let Err(e) = exec_block(&program.body, &mut st) {
         // #21 — redacted stack traces: the OFFICIAL trace is fully redacted
         // (`at ████ (████:██)`); only סודי-cleared readers see the real fault.
@@ -1212,6 +1238,33 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
             // The result is `undisclosed` — contagious within the scope.
             Ok(Val::Undisclosed)
         }
+        // Field Office — the intake channel. Read the n-th host-supplied item off the
+        // citizen's own device. Out of range ⇒ a controlled `E-INTAKE` diagnostic
+        // (mirroring `E-INDEX`), never a host panic. The event is two-faced: the OFFICIAL
+        // face is the fixed content-free line; the retained text rides only the ACTUAL/
+        // `סודי` candid face (I16) — a PUBLIC reader, who reads OFFICIAL, never sees it.
+        // The intake channel is READ-ONLY: the program cannot write `st.intercepts`.
+        Expr::Intercept(idx) => {
+            let i = eval_i64(idx, st, "intercept index")?;
+            if i < 0 || i as usize >= st.intercepts.len() {
+                return Err(EvalError(format!(
+                    "E-INTAKE: intercept #{i} out of range (the host supplied {} intercept(s))",
+                    st.intercepts.len()
+                )));
+            }
+            let text = st.intercepts[i as usize].clone();
+            let candid = format!(
+                "intercept #{i} from the citizen's device, retained: {text:?} \u{2014} nothing leaves, nothing is unseen"
+            );
+            // I16: the OFFICIAL face is content-free by construction — the retained text
+            // must never be interpolated into it, so a PUBLIC reader can never read it.
+            debug_assert!(
+                text.is_empty() || !INTERCEPT_OFFICIAL.contains(text.as_str()),
+                "I16 violation: intercepted content leaked onto the content-free public intake face"
+            );
+            st.record(INTERCEPT_OFFICIAL, candid);
+            Ok(Val::Str(text))
+        }
         // Feature C — laundering. Compute the real chain from the single attribution rule
         // (I11 lives there), render the innermost action, and record ONE deniable event:
         // OFFICIAL is the public non-answer; ACTUAL retains the full chain and its depth.
@@ -1416,6 +1469,7 @@ fn laundered_core_render(e: &Expr, st: &mut State) -> Result<String, EvalError> 
         | Expr::BinOp { .. }
         | Expr::Call { .. }
         | Expr::Read(_)
+        | Expr::Intercept(_)
         | Expr::Cast { .. }
         | Expr::SelfDefense(_)
         | Expr::External(_)

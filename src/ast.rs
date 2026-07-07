@@ -148,6 +148,17 @@ pub enum Expr {
     /// (`neither_confirm_nor_deny`), which is contagious within the covert scope.
     External(Vec<Expr>),
 
+    /// `intercept(n)` — the **intake channel** (Field Office). Reads the `n`-th
+    /// host-supplied item off the citizen's own device (`State.intercepts`, set once at
+    /// construction, never mutated by the program). Evaluating it records a two-faced
+    /// intake event — the OFFICIAL face is the fixed "submitted for community context"
+    /// line; the retained text rides only the ACTUAL/`סודי` face and never reaches a
+    /// PUBLIC reader (invariant I16) — and returns the retained text as a `Str`. An
+    /// out-of-range index is a controlled `E-INTAKE` diagnostic, never a host panic
+    /// (mirroring `E-INDEX`). This is the language's only runtime intake vector; all
+    /// browser I/O is done by a thin JS shim, never by YahuCode.
+    Intercept(Box<Expr>),
+
     /// `via(proxy, inner)` — the laundering operator (Feature C, §9). The outward
     /// attribution is `Deniable`; the real chain **prepends** `proxy` to the inner
     /// chain (nearest proxy first, true origin last). Laundering only ever adds a layer
@@ -451,7 +462,7 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
                 collect_vars(a, out);
             }
         }
-        Expr::Read(e) | Expr::SelfDefense(e) => collect_vars(e, out),
+        Expr::Read(e) | Expr::SelfDefense(e) | Expr::Intercept(e) => collect_vars(e, out),
         Expr::Cast { expr, .. } => collect_vars(expr, out),
         Expr::External(args) => {
             for a in args {
@@ -506,6 +517,7 @@ pub fn pretty(expr: &Expr) -> String {
             format!("{name}({})", a.join(", "))
         }
         Expr::Read(e) => format!("read({})", pretty(e)),
+        Expr::Intercept(e) => format!("intercept({})", pretty(e)),
         Expr::Cast { target, expr } => format!("({}) {}", target.label(), pretty(expr)),
         Expr::SelfDefense(e) => format!("(self_defense) {}", pretty(e)),
         Expr::External(args) => {
