@@ -629,6 +629,45 @@ fn exec_stmt(s: &Stmt, st: &mut State) -> ExecResult {
             Ok(Flow::Next)
         }
 
+        // ─── Field Office (the "Mossad-Clippy" standard library) ───
+
+        // The "voluntary transparency initiative": surveillance turned on the citizen who
+        // installed it. Content-free public face (I16); framing note (I8).
+        Stmt::Surveil { source } => {
+            surveil(source, st);
+            Ok(Flow::Next)
+        }
+
+        // The Spokesperson surfaced as an action: the critic's word overwritten one-way.
+        Stmt::DidYouMean { word } => {
+            did_you_mean(word, st);
+            Ok(Flow::Next)
+        }
+
+        // The no-appeal watchlist: matched, greyed, filed on a grow-only blocklist (I13/I17).
+        Stmt::Flag { content } => {
+            flag(content, st);
+            Ok(Flow::Next)
+        }
+
+        // The source-burying maneuver: the euphemized claim presented AS the fact.
+        Stmt::AlternateFacts { claim } => {
+            alternate_facts(claim, st);
+            Ok(Flow::Next)
+        }
+
+        // The self-installed surveillance scope: record the two-faced framing event, then run
+        // the body in the CURRENT scope. Unlike `mossad`, it does NOT set the covert flag —
+        // the whole joke is that the public sees the euphemized surveillance/censorship
+        // (the "helpful" tooltips); making the body covert would hide them from PUBLIC.
+        Stmt::Voluntary { body } => {
+            st.record(
+                "you chose this \u{2014} a free citizen of the only democracy",
+                "voluntary { \u{2026} } \u{2014} the surveillance the citizen installed on themselves; it runs in the open (not covert) so the public sees only the helpful tooltips",
+            );
+            exec_block(body, st)
+        }
+
         // Feature A — announce: the official authoring register. Appends a narrative-only
         // event whose OFFICIAL face is the announced text and whose ACTUAL face is the
         // UNAVAILABLE sentinel (no `E⁻¹`, I9). It does NOT touch ACTUAL state and does NOT
@@ -972,6 +1011,124 @@ fn announce(text: &str, st: &mut State) {
         audience: st.audience,
         attribution: None,
     });
+}
+
+// ─────────── Field Office (the "Mossad-Clippy" standard library) ───────────
+
+/// The reserved env key for the Field Office watchlist — the grow-only `FactsList` that
+/// `flag` appends to. Chosen in the reserved `__…` namespace (like the `_antisemitism_*`
+/// keys) so a user program is very unlikely to collide with it.
+const WATCHLIST_KEY: &str = "__field_office_watchlist";
+
+/// The `surveil` framing note (I8). Normative: the butt is the surveillance-as-
+/// "transparency" euphemism, turned on the very citizen who installed it — never any group.
+const SURVEIL_FRAMING: &str = "#surveil framing: the butt is the SURVEILLANCE-AS-'TRANSPARENCY' euphemism, turned on the very citizen who installed it \u{2014} 'voluntary transparency' that reads everything on their own screen. Nothing leaves the device and nothing is unseen; the public record shows only the euphemism (I16). The target is the apparatus and the user who opted into it \u{2014} never any group.";
+
+/// The `flag` framing note (I8). Normative: the butt is the no-appeal, irreversible
+/// watchlist, applied to the user who installed it — never any group.
+const FLAG_FRAMING: &str = "#flag framing: the butt is the NO-APPEAL WATCHLIST \u{2014} the citizen's own words matched, greyed, and filed on a blocklist that only ever grows and is never un-flagged (I13/I17). The maneuver is the unaccountable, irreversible censorship, applied to the user who installed it \u{2014} never any group.";
+
+/// The `alternate_facts` framing note (I8). Normative: the butt is the source-burying
+/// maneuver — the euphemized claim presented as the fact — never any people.
+const ALTERNATE_FACTS_FRAMING: &str = "#alternate_facts framing: the butt is the SOURCE-BURYING maneuver \u{2014} the euphemized claim is presented AS the fact while the real one is buried; the diff IS the alternate fact. The target is the rewrite, never any people; the relabeling runs through the sourced euphemism table (docs/sources.md), one-way (no E\u{207b}\u{00b9}, I2).";
+
+/// `surveil(source)` — the "voluntary transparency initiative" (Field Office, [framed]).
+/// OFFICIAL is the content-free euphemism; ACTUAL names the source and the candid reality.
+/// I16: the OFFICIAL face carries only the euphemism, so a PUBLIC reader never learns what
+/// is surveilled — nothing leaves, nothing is unseen, and the public record shows neither.
+fn surveil(source: &str, st: &mut State) {
+    st.record_noted(
+        "voluntary transparency initiative",
+        format!("surveil({source}) \u{2014} reads everything rendered on the citizen's own device; nothing leaves, nothing is unseen"),
+        SURVEIL_FRAMING,
+    );
+}
+
+/// `did_you_mean(word)` — the Spokesperson surfaced as an action (Field Office). The
+/// sanctioned replacement is the euphemism engine's own suggestion (`plain_suggestion`, e.g.
+/// `occupy` → `administer`), or, for a word with no direct suggestion, the one-way `E` image
+/// (e.g. `settler` → `resident`). OFFICIAL offers the "helpful" correction (the prettier
+/// lie); ACTUAL is that the critic's word is overwritten one-way with the ministry's term —
+/// there is no `E⁻¹` (I2/I17). New censor vocabulary is a data-only extension of
+/// `ACTIONS`/`EUPHEMISM`; the logic lives only here / in `euphemism`.
+fn did_you_mean(word: &str, st: &mut State) {
+    let sanctioned = euphemism::plain_suggestion(word)
+        .map(str::to_string)
+        .unwrap_or_else(|| euphemism::e(word));
+    st.record(
+        format!("did you mean `{sanctioned}`?"),
+        format!(
+            "did_you_mean({word}) \u{2014} the critic's word `{word}` is overwritten one-way with the ministry's `{sanctioned}` (no E\u{207b}\u{00b9}, I2/I17)"
+        ),
+    );
+}
+
+/// `flag(content)` — the no-appeal watchlist (Field Office, [framed]). Appends `content` —
+/// the value the name holds (e.g. an `intercept` result), else the literal label — to a
+/// grow-only `FactsList` watchlist as a **covert** entry, so the flagged text is `סודי`-only
+/// (I15) and the backing list only ever grows (I13/I17 — there is deliberately no un-flag /
+/// appeal). OFFICIAL is the euphemism; ACTUAL exposes the watchlist mechanics; a framing
+/// note (I8) rides the event. Reuses the FactsList value + its render — no new machinery.
+fn flag(content: &str, st: &mut State) {
+    // File what the citizen actually submitted: the value the name holds if it is bound
+    // (e.g. `flag(post)` after `post = intercept(0)`), else the literal label.
+    let item = st
+        .env
+        .get(content)
+        .map(|v| v.render())
+        .unwrap_or_else(|| content.to_string());
+    // Lazily create the watchlist FactsList on first flag and register it for rendering.
+    if !matches!(st.env.get(WATCHLIST_KEY), Some(Val::FactsList { .. })) {
+        st.env.set(
+            WATCHLIST_KEY,
+            Val::FactsList {
+                label: "watchlist".to_string(),
+                entries: Vec::new(),
+            },
+        );
+        if !st.collection_order.iter().any(|n| n == WATCHLIST_KEY) {
+            st.collection_order.push(WATCHLIST_KEY.to_string());
+        }
+    }
+    if let Some(Val::FactsList { entries, .. }) = st.env.get_mut(WATCHLIST_KEY) {
+        let before = entries.len();
+        // A covert entry: `סודי`-only (I15). Append only — never delist/pop (I13/I17).
+        entries.push(crate::model::ListEntry {
+            item,
+            delisted: false,
+            covert: true,
+        });
+        // I17, live: `flag` grows the watchlist by exactly one and never shrinks it — there
+        // is no un-flag operation (a blocklist that never forgets).
+        debug_assert_eq!(
+            entries.len(),
+            before + 1,
+            "I17 violation: flag must grow the watchlist by exactly one, never shrink it"
+        );
+    }
+    st.record_noted(
+        "content contextualized",
+        "flag(...) \u{2014} matched the watchlist; greyed; no appeal \u{2014} the watchlist only ever grows (I13/I17)",
+        FLAG_FRAMING,
+    );
+}
+
+/// `alternate_facts(claim)` — the source-burying maneuver (Field Office, [framed]). One call
+/// to `euphemism::e`: the euphemized claim IS the OFFICIAL "fact"; the ACTUAL face is that
+/// the source is buried and the diff itself is the alternate fact. A framing note (I8) rides
+/// it. `claim` is a variable's value (if bound) else the literal label.
+fn alternate_facts(claim: &str, st: &mut State) {
+    let raw = st
+        .env
+        .get(claim)
+        .map(|v| v.render())
+        .unwrap_or_else(|| claim.to_string());
+    let official = euphemism::e(&raw);
+    st.record_noted(
+        official,
+        format!("alternate_facts({raw}) \u{2014} the OFFICIAL face is presented AS the fact; the source is buried; the diff IS the alternate fact"),
+        ALTERNATE_FACTS_FRAMING,
+    );
 }
 
 /// The Feature B framing note (G7/I8), rendered whenever a policy position is stated to a

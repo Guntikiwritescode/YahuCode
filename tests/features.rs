@@ -1259,6 +1259,210 @@ fn intercept_is_read_only_the_program_cannot_write_the_channel() {
     assert_eq!(st.env.get("a"), st.env.get("b"));
 }
 
+// ─────────── Field Office — the five statements ───────────
+
+#[test]
+fn surveil_positive_content_free_official_with_framing() {
+    // OFFICIAL is the content-free euphemism; ACTUAL is the candid surveillance reality; a
+    // framing note (I8) rides the event.
+    let st = run(r#"@operation("Guardian of Discourse")
+surveil(feed);"#);
+    assert!(
+        official(&st).contains("voluntary transparency initiative"),
+        "official: {}",
+        official(&st)
+    );
+    let act = actual(&st);
+    assert!(
+        act.contains("reads everything rendered on the citizen's own device"),
+        "actual: {act}"
+    );
+    assert!(
+        act.contains("nothing leaves, nothing is unseen"),
+        "actual: {act}"
+    );
+    assert!(
+        st.log.iter().any(|e| e
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("#surveil framing"))),
+        "surveil must carry a framing note (I8)"
+    );
+}
+
+#[test]
+fn surveil_negative_source_not_on_official_face() {
+    // I16-adjacent: the surveilled source never leaks onto the PUBLIC face — only the euphemism.
+    let st = run(r#"@operation("Guardian of Discourse")
+surveil(private_dms);"#);
+    assert!(
+        !official(&st).contains("private_dms"),
+        "the surveilled source must not surface on the OFFICIAL face: {}",
+        official(&st)
+    );
+}
+
+#[test]
+fn did_you_mean_positive_reuses_the_spokesperson() {
+    // `did_you_mean(occupy)` suggests the ministry's sanctioned `administer` (plain_suggestion);
+    // ACTUAL exposes the one-way overwrite (no E⁻¹).
+    let st = run(r#"@operation("Guardian of Discourse")
+did_you_mean(occupy);"#);
+    assert!(
+        official(&st).contains("did you mean `administer`?"),
+        "official: {}",
+        official(&st)
+    );
+    let act = actual(&st);
+    assert!(act.contains("overwritten one-way"), "actual: {act}");
+    assert!(act.contains("no E\u{207b}\u{00b9}"), "actual: {act}");
+}
+
+#[test]
+fn did_you_mean_negative_euphemism_fallback_for_non_verb() {
+    // A word with no direct ACTIONS suggestion falls back to the one-way E image
+    // (settler → resident), a data-only reuse of the euphemism table.
+    let st = run(r#"@operation("Guardian of Discourse")
+did_you_mean(settler);"#);
+    assert!(
+        official(&st).contains("did you mean `resident`?"),
+        "official: {}",
+        official(&st)
+    );
+}
+
+#[test]
+fn flag_positive_grow_only_covert_watchlist() {
+    // `flag(post)` files the citizen's own submission on a covert, grow-only watchlist; the
+    // OFFICIAL face is the euphemism; a framing note (I8) rides it.
+    let st = run_intake(
+        r#"@operation("Guardian of Discourse")
+post = intercept(0);
+flag(post);"#,
+        &["end the occupation"],
+    );
+    assert!(
+        official(&st).contains("content contextualized"),
+        "official: {}",
+        official(&st)
+    );
+    // The flagged content is סודי-only (I15): it appears on the ACTUAL watchlist render.
+    let act = actual(&st);
+    assert!(
+        act.contains("end the occupation"),
+        "actual watchlist: {act}"
+    );
+    assert!(act.contains("the shadow only grows"), "actual: {act}");
+    assert!(
+        st.log.iter().any(|e| e
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("#flag framing"))),
+        "flag must carry a framing note (I8)"
+    );
+}
+
+#[test]
+fn flag_negative_content_never_on_public_face() {
+    // The flagged content never reaches the PUBLIC face; the public watchlist shows nothing.
+    let st = run_intake(
+        r#"@operation("Guardian of Discourse")
+post = intercept(0);
+flag(post);"#,
+        &["a dissenting opinion"],
+    );
+    let off = official(&st);
+    assert!(
+        !off.contains("a dissenting opinion"),
+        "the flagged content leaked to the PUBLIC face: {off}"
+    );
+    assert!(
+        off.contains("structures remaining: 0"),
+        "the public watchlist must appear empty: {off}"
+    );
+}
+
+#[test]
+fn alternate_facts_positive_euphemized_claim_is_the_fact() {
+    // `alternate_facts` euphemizes the claim (E) and presents it AS the OFFICIAL fact; ACTUAL
+    // exposes the source-burial. Using a euphemizable claim shows E at work (occupy→administer).
+    let st = run(r#"@operation("Guardian of Discourse")
+alternate_facts(occupy);"#);
+    assert!(
+        official(&st).contains("administer"),
+        "the euphemized claim must be presented as the OFFICIAL fact: {}",
+        official(&st)
+    );
+    let act = actual(&st);
+    assert!(act.contains("presented AS the fact"), "actual: {act}");
+    assert!(
+        act.contains("the diff IS the alternate fact"),
+        "actual: {act}"
+    );
+    assert!(
+        st.log.iter().any(|e| e
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("#alternate_facts framing"))),
+        "alternate_facts must carry a framing note (I8)"
+    );
+}
+
+#[test]
+fn alternate_facts_negative_polarity_official_never_uglier() {
+    // I1/G3: the euphemized OFFICIAL claim is never uglier than the raw one.
+    let st = run(r#"@operation("Guardian of Discourse")
+alternate_facts(bomb);"#);
+    // `bomb` euphemizes to `strike` on the OFFICIAL face; the raw `bomb` is only on ACTUAL.
+    assert!(
+        official(&st).contains("strike"),
+        "official: {}",
+        official(&st)
+    );
+    assert!(
+        !official(&st).contains("bomb"),
+        "OFFICIAL must not carry the uglier word: {}",
+        official(&st)
+    );
+    assert!(actual(&st).contains("bomb"), "actual: {}", actual(&st));
+}
+
+#[test]
+fn voluntary_positive_records_frame_and_runs_body_in_the_open() {
+    // The `voluntary` wrapper records its two-faced frame and runs the body NOT covert, so
+    // the inner euphemisms stay on the PUBLIC face.
+    let st = run(r#"@operation("Guardian of Discourse")
+voluntary {
+  did_you_mean(occupy);
+}"#);
+    let off = official(&st);
+    assert!(
+        off.contains("you chose this \u{2014} a free citizen of the only democracy"),
+        "official: {off}"
+    );
+    // The inner tooltip is publicly visible (body is not covert).
+    assert!(
+        off.contains("did you mean `administer`?"),
+        "inner euphemism must be public: {off}"
+    );
+    assert!(
+        !st.covert,
+        "voluntary must restore/leave the covert flag unset"
+    );
+}
+
+#[test]
+fn voluntary_negative_does_not_gate_a_classified_op() {
+    // `voluntary` is NOT a gate: a classified op inside it without a hasbara/mossad is E-UNGATED.
+    let ds = diags(
+        r#"@operation("Guardian of Discourse")
+voluntary {
+  neutralize(target);
+}"#,
+    );
+    assert!(any_diag_contains(&ds, "E-UNGATED"), "diags: {ds:?}");
+}
+
 // ─────────── Collection robustness regressions (correctness-review fixes) ───────────
 
 /// Feature E (fix): extreme slot values (near i64::MAX) must not overflow into a host panic;

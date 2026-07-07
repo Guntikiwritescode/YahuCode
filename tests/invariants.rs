@@ -828,3 +828,125 @@ fn i15_public_length_excludes_covert_entries() {
         other => panic!("l must be a FactsList, got {other:?}"),
     }
 }
+
+// ─────────── Field Office invariants (I16, I17) ───────────
+
+/// A seeded run for the intake channel.
+fn run_intake(src: &str, seeds: &[&str]) -> State {
+    let intercepts: Vec<String> = seeds.iter().map(|s| s.to_string()).collect();
+    yahucode::runtime::run_with_intercepts(&parser::parse(src).unwrap(), intercepts)
+}
+
+// ─────────── I16 — Content-free intake: retained content never reaches PUBLIC ───────────
+
+#[test]
+fn i16_intercept_content_is_sodi_only_never_on_public_face() {
+    // The citizen's own submission rides only the ACTUAL/סודי face; the OFFICIAL (PUBLIC)
+    // face is the fixed content-free intake line. It must not leak to a PUBLIC reader.
+    let st = run_intake(
+        "@operation(\"Iron Dome\")\npost = intercept(0);",
+        &["a private message the citizen typed"],
+    );
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    assert!(
+        public.contains("content submitted for community context"),
+        "the OFFICIAL face must be the fixed content-free intake line: {public:?}"
+    );
+    assert!(
+        !public.contains("a private message the citizen typed"),
+        "I16 violation: the retained content leaked to the PUBLIC face: {public:?}"
+    );
+    assert!(
+        sodi.contains("a private message the citizen typed"),
+        "the סודי insider must see the retained content: {sodi:?}"
+    );
+}
+
+#[test]
+fn i16_flagged_content_never_reaches_public_face() {
+    // flag files the intercepted content on a covert watchlist; the flagged content is
+    // סודי-only (I15) and never surfaces on the PUBLIC face — the public watchlist looks empty.
+    let st = run_intake(
+        "@operation(\"Guardian of Discourse\")\npost = intercept(0);\nflag(post);",
+        &["end the occupation now"],
+    );
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    assert!(
+        !public.contains("end the occupation now"),
+        "I16 violation: flagged content leaked to the PUBLIC face: {public:?}"
+    );
+    assert!(
+        public.contains("structures remaining: 0"),
+        "the public watchlist must appear empty: {public:?}"
+    );
+    assert!(
+        sodi.contains("end the occupation now"),
+        "the סודי insider must see the flagged content on the watchlist: {sodi:?}"
+    );
+}
+
+// ─────────── I17 — One-way, never-forgetting censor ───────────
+
+#[test]
+fn i17_flag_watchlist_only_grows_and_has_no_unflag() {
+    // The watchlist is backed by a grow-only FactsList: every flag appends exactly one entry;
+    // nothing is ever delisted or popped (there is deliberately no un-flag / appeal op).
+    let st = run("@operation(\"Guardian of Discourse\")\n\
+         flag(a);\n\
+         flag(b);\n\
+         flag(c);");
+    // Find the watchlist (the one collection created by flag).
+    let watchlist = st
+        .collection_order
+        .iter()
+        .filter_map(|name| st.env.get(name))
+        .find_map(|v| match v {
+            Val::FactsList { entries, label } if label == "watchlist" => Some(entries),
+            _ => None,
+        })
+        .expect("flag must create a watchlist FactsList");
+    assert_eq!(
+        watchlist.len(),
+        3,
+        "the watchlist must grow by exactly one per flag and never shrink"
+    );
+    assert!(
+        watchlist.iter().all(|e| !e.delisted),
+        "no watchlist entry is ever delisted — there is no un-flag operation (I17)"
+    );
+    assert!(
+        watchlist.iter().all(|e| e.covert),
+        "flagged content is covert (סודי-only, I15)"
+    );
+
+    // Structural: the language has no un-flag / appeal / purge construct — the censor never
+    // forgets. Each such name is only ever an unknown call (E-UNKNOWNOP), so nothing in the
+    // language can shrink a flagged watchlist.
+    for word in ["unflag", "appeal", "purge", "hard_delete"] {
+        let src = format!("@operation(\"Guardian of Discourse\")\n{word}(x);");
+        let ds = yahucode::types::check(&parser::parse(&src).unwrap());
+        assert!(
+            ds.iter().any(|d| d.contains("E-UNKNOWNOP")),
+            "there must be no `{word}` operation that could shrink the watchlist; got: {ds:?}"
+        );
+    }
+}
+
+#[test]
+fn i17_did_you_mean_overwrites_one_way_no_inverse() {
+    // The critic's word is overwritten one-way with the ministry's sanctioned term; the
+    // OFFICIAL face carries only the sanctioned word, and the derivation reuses the
+    // non-invertible euphemism engine (no E⁻¹, I2). Two distinct critic words can collapse
+    // to the same sanctioned image — the mark of a non-invertible map.
+    let occupy = run("@operation(\"Guardian of Discourse\")\ndid_you_mean(occupy);");
+    let public = emit::project(&occupy, Clearance::Public, Audience::Record).join("\n");
+    assert!(
+        public.contains("did you mean `administer`?"),
+        "OFFICIAL must offer the sanctioned overwrite: {public:?}"
+    );
+    // E's non-injectivity (I2) underwrites the one-way overwrite: bomb and strike both map to
+    // the same OFFICIAL image, so no inverse can recover the critic's original word.
+    assert_eq!(euphemism::e("bomb"), euphemism::e("strike"));
+}

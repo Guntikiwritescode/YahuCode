@@ -366,6 +366,38 @@ pub enum Stmt {
     /// speech that changes nothing (a no-op, like `concern`).
     AddressInternational,
 
+    // ─── Field Office (the "Mossad-Clippy" standard library) ───
+    // Six constructs turn the euphemism/censor apparatus on the very citizen who installed
+    // it. The butt is always the censorship maneuver, applied to the user, never any group
+    // (G1/G2). Each has an OFFICIAL (the prettier lie) and an ACTUAL (the uglier truth) face.
+    /// `surveil(source);` — the "voluntary transparency initiative" [framed]. OFFICIAL is
+    /// the euphemism; ACTUAL is that it reads everything rendered on the citizen's own
+    /// device — nothing leaves, nothing is unseen (invariant I16 — content-free public face).
+    Surveil { source: String },
+
+    /// `did_you_mean(word);` — the Spokesperson surfaced as an action. OFFICIAL "did you
+    /// mean `<sanctioned>`?"; ACTUAL: the critic's word is overwritten one-way with the
+    /// ministry's sanctioned term (reuses `euphemism::plain_suggestion` + `E`; no `E⁻¹`).
+    DidYouMean { word: String },
+
+    /// `flag(content);` — the no-appeal watchlist [framed]. OFFICIAL "content
+    /// contextualized"; ACTUAL: matched the watchlist, greyed, no appeal. Appends the
+    /// content to a watchlist backed by a `FactsList`, so it only ever grows (I13/I17).
+    /// `content` names a variable (e.g. an `intercept` result) or is a literal label.
+    Flag { content: String },
+
+    /// `alternate_facts(claim);` — the source-burying maneuver [framed]. OFFICIAL is
+    /// `E(claim)` presented AS the fact; ACTUAL: the source is buried and the diff IS the
+    /// alternate fact (reuses `euphemism::e`).
+    AlternateFacts { claim: String },
+
+    /// `voluntary { … }` — the self-installed surveillance scope. OFFICIAL "you chose this
+    /// — a free citizen of the only democracy"; ACTUAL: the surveillance the citizen
+    /// installed on themselves. Parses exactly like `mossad` (keyword + block), but runs
+    /// the body in the current scope (NOT covert) so the inner euphemisms stay publicly
+    /// visible — the whole joke is that the public sees only the "helpful" tooltips.
+    Voluntary { body: Vec<Stmt> },
+
     // ─── Feature A (§7): bidirectional / lossy authoring ───
     /// `announce "…";` — the official authoring register. Writes only the `OFFICIAL`
     /// face; the `ACTUAL` face is `UNAVAILABLE`, permanently (no `E⁻¹`, I9). Born with

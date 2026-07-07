@@ -73,6 +73,7 @@ fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
             | Stmt::Hasbara { body, .. }
             | Stmt::Mossad { body }
             | Stmt::FuncDef { body, .. }
+            | Stmt::Voluntary { body }
             | Stmt::Address { body, .. } => walk_legislation(body, law),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
@@ -81,6 +82,10 @@ fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
             }
             // No nested body / not a legislate — nothing to collect.
             Stmt::Assign { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Declare(_)
             | Stmt::Return(_)
             | Stmt::ExprStmt(_)
@@ -259,6 +264,14 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
                 out.push(coll.clone());
                 out.push(case.clone());
             }
+            // Field Office — the user-supplied identifiers are echoed to the rendered faces
+            // (e.g. `did_you_mean`'s word, `alternate_facts`'s claim), so they are scanned for
+            // contested characterizations like any other output text; `voluntary` recurses.
+            Stmt::Surveil { source } => out.push(source.clone()),
+            Stmt::DidYouMean { word } => out.push(word.clone()),
+            Stmt::Flag { content } => out.push(content.clone()),
+            Stmt::AlternateFacts { claim } => out.push(claim.clone()),
+            Stmt::Voluntary { body } => collect_user_texts(body, out),
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -390,6 +403,10 @@ fn check_gate(
             // one inside a hasbara/mossad cannot smuggle a classified op past the gate at
             // the invoke site. (The disclosure pass already scopes arms this way.)
             Stmt::Address { body, .. } => check_gate(body, gated, funcs, law, diags),
+            // A `voluntary { … }` block runs inline (like `address`), so it keeps the current
+            // gate context — it is NOT itself a gate. A classified op inside `voluntary`
+            // without a hasbara/mossad is still E-UNGATED.
+            Stmt::Voluntary { body } => check_gate(body, gated, funcs, law, diags),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
                     check_gate(body, false, funcs, law, diags);
@@ -444,6 +461,10 @@ fn check_gate(
             | Stmt::Push { .. }
             | Stmt::Remove { .. }
             | Stmt::Classify { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Revoke { .. } => {}
         }
     }
@@ -462,6 +483,7 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 Stmt::Hasbara { body, .. }
                 | Stmt::Mossad { body }
                 | Stmt::While { body, .. }
+                | Stmt::Voluntary { body }
                 | Stmt::Address { body, .. } => walk(body, names),
                 Stmt::PolyStatement { arms, .. } => {
                     for (_, body) in arms {
@@ -511,6 +533,10 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Push { .. }
                 | Stmt::Remove { .. }
                 | Stmt::Classify { .. }
+                | Stmt::Surveil { .. }
+                | Stmt::DidYouMean { .. }
+                | Stmt::Flag { .. }
+                | Stmt::AlternateFacts { .. }
                 | Stmt::Revoke { .. } => {}
             }
         }
@@ -598,6 +624,11 @@ fn check_disclosure(
             Stmt::Address { body, .. } => {
                 check_disclosure(body, context, symtab, diags);
             }
+            // Field Office — a `voluntary { … }` block runs inline in the enclosing scope
+            // (it is NOT covert), so it is checked with the same reading context.
+            Stmt::Voluntary { body } => {
+                check_disclosure(body, context, symtab, diags);
+            }
             // A poly-statement is a definition (its arms run when invoked); check each arm
             // independently at PUBLIC, like a function body.
             Stmt::PolyStatement { arms, .. } => {
@@ -640,6 +671,10 @@ fn check_disclosure(
             | Stmt::Push { .. }
             | Stmt::Remove { .. }
             | Stmt::Classify { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Revoke { .. } => {}
         }
     }
