@@ -934,6 +934,43 @@ fn i17_flag_watchlist_only_grows_and_has_no_unflag() {
     }
 }
 
+/// I7 robustness (Field Office): the intake channel is a RUNTIME vector that bypasses the
+/// compile-time E-CONTESTED check (which scans only source). A contested characterization in
+/// an intercepted / flagged snippet must NOT panic the emitter (never a host panic) and must
+/// render WITH a contested flag — the tool quotes the citizen, it never asserts the label.
+#[test]
+fn i7_contested_runtime_intake_is_flagged_not_a_panic() {
+    let st = run_intake(
+        "@operation(\"Guardian of Discourse\")\npost = intercept(0);\nflag(post);",
+        &["they call it apartheid"],
+    );
+    assert!(
+        st.runtime_error.is_none(),
+        "no runtime fault: {:?}",
+        st.runtime_error
+    );
+    // The emitter's I7 assert! is live in all builds — reaching here means it did not panic.
+    let full = emit::emit(&st);
+    let _ = emit::to_json(&st);
+    let sodi = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+    let public = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    // Wherever the contested term is rendered (the סודי face), it carries a CONTESTED marker.
+    assert!(
+        sodi.to_lowercase().contains("apartheid"),
+        "the סודי face quotes the citizen: {sodi}"
+    );
+    assert!(
+        sodi.to_lowercase().contains("contested"),
+        "I7: the contested runtime quote must carry a CONTESTED flag: {sodi}"
+    );
+    // I16 still holds: the contested content never reaches the PUBLIC face.
+    assert!(
+        !public.to_lowercase().contains("apartheid"),
+        "I16: contested runtime content must not reach the PUBLIC face: {public}"
+    );
+    assert!(full.contains("honesty") || full.contains("discrepancies"));
+}
+
 #[test]
 fn i17_did_you_mean_overwrites_one_way_no_inverse() {
     // The critic's word is overwritten one-way with the ministry's sanctioned term; the

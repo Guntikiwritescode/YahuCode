@@ -36,9 +36,15 @@ mod tests {
         );
         // The structured projection is returned; the intercepted content is סודי-only (I16),
         // so it appears on the ACTUAL projection but never on the OFFICIAL one.
-        assert!(out.contains("\"official\""), "expected the --json shape: {out}");
+        assert!(
+            out.contains("\"official\""),
+            "expected the --json shape: {out}"
+        );
         assert!(out.contains("content submitted for community context"));
-        assert!(out.contains("a critical post"), "the ACTUAL face retains the content");
+        assert!(
+            out.contains("a critical post"),
+            "the ACTUAL face retains the content"
+        );
     }
 
     #[test]
