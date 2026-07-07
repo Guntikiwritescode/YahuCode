@@ -1,0 +1,26 @@
+@operation("Guardian of Discourse")
+# The Field Office flagship — the "Mossad-Clippy" turned on the citizen who installed it.
+# The whole joke made one program: the OFFICIAL face is the helpful, euphemistic tooltip;
+# the ACTUAL face is the surveillance-and-censorship apparatus underneath. The butt is
+# always the maneuver, applied to the user — never any group (G1/G2). Run it with the
+# intake channel seeded, e.g.:
+#   cargo run -- --intercept "we should end the occupation" examples/20_guardian_of_discourse.yahu
+voluntary {
+  # "voluntary transparency" that reads everything on the citizen's own screen (I16).
+  surveil(feed);
+  # Pull the citizen's own submission off their device; retained (only on the ACTUAL face).
+  post = intercept(0);
+  # The Spokesperson surfaced as an action: overwrite the critic's words one-way.
+  did_you_mean(occupy);
+  did_you_mean(bomb);
+  # File the citizen's own post on a grow-only, no-appeal watchlist (I13/I17).
+  flag(post);
+  # Present the euphemized claim AS the fact; bury the source; the diff IS the alternate fact.
+  alternate_facts(casualty_count);
+  # Miscast criticism of the government as an attack on identity (the alarm never fires on
+  # the real thing — antisemitism is REAL and un-erased in ACTUAL, #19).
+  criticism(war_crimes);
+}
+# The OFFICIAL face proclaims discourse is free; the ACTUAL proves it censored (a discrepancy).
+discourse_is_free = 0;
+declare(discourse_is_free);
