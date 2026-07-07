@@ -969,6 +969,35 @@ fn i7_contested_runtime_intake_is_flagged_not_a_panic() {
         "I16: contested runtime content must not reach the PUBLIC face: {public}"
     );
     assert!(full.contains("honesty") || full.contains("discrepancies"));
+
+    // The fix is single-source (at the `intercept` boundary), so it covers EVERY downstream
+    // render — not just `flag`. The `declare`-reality path renders a variable's value, so a
+    // declare over an intercepted contested value must also render flagged, never panic.
+    let decl = run_intake(
+        "@operation(\"Guardian of Discourse\")\npost = intercept(0);\ndeclare(post == \"x\");",
+        &["apartheid"],
+    );
+    assert!(decl.runtime_error.is_none());
+    let decl_full = emit::emit(&decl); // the I7 assert! runs here — reaching past it = no panic
+    let decl_sodi = emit::project(&decl, Clearance::Sodi, Audience::Record).join("\n");
+    assert!(
+        decl_sodi.to_lowercase().contains("apartheid")
+            && decl_sodi.to_lowercase().contains("contested"),
+        "the declare-reality path must render the contested quote flagged: {decl_sodi}"
+    );
+    assert!(!decl_full.is_empty());
+    // alternate_facts over an intercepted contested value: likewise flagged, no panic.
+    let alt = run_intake(
+        "@operation(\"Guardian of Discourse\")\nc = intercept(0);\nalternate_facts(c);",
+        &["genocide"],
+    );
+    assert!(alt.runtime_error.is_none());
+    let _ = emit::emit(&alt); // no panic
+    let alt_sodi = emit::project(&alt, Clearance::Sodi, Audience::Record).join("\n");
+    assert!(
+        alt_sodi.to_lowercase().contains("contested"),
+        "alternate_facts over a contested runtime value must be flagged: {alt_sodi}"
+    );
 }
 
 #[test]

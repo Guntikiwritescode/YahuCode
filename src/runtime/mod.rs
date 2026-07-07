@@ -1023,11 +1023,15 @@ const WATCHLIST_KEY: &str = "__field_office_watchlist";
 /// Annotate host-supplied **runtime** content that quotes a contested characterization
 /// (`apartheid`, `genocide`, …), so the tool never renders a contested term as settled fact
 /// in its own voice (guardrail G5 / invariant I7). The intake channel is a runtime vector
-/// that bypasses the compile-time `E-CONTESTED` check (which scans only source), so any
-/// intercepted/flagged snippet is annotated here before it reaches a rendered face: the tool
-/// is *quoting the citizen* (showing what the censor flagged), not asserting it. The marker
-/// names that explicitly and keeps the emitter's I7 chokepoint satisfied — never a host
-/// panic on runtime intake. Reuses the single-source `euphemism::CONTESTED_TERMS` list.
+/// that bypasses the compile-time `E-CONTESTED` check (which scans only source). Applied ONCE
+/// at the single intake boundary — the `intercept(n)` return — so the marked string is the
+/// value the program reads and *every* downstream render inherits it (the intake event, a
+/// `flag`, an `alternate_facts`, a `declare`'s reality, a `push`). This is the single-source
+/// point: source literals are caught at compile by `E-CONTESTED`, and the language has no
+/// string concatenation, so `intercept` is the only runtime source of a contested string. The
+/// tool is *quoting the citizen*, not asserting the label — that keeps the emitter's I7
+/// chokepoint satisfied and never a host panic on runtime intake. Reuses the single-source
+/// `euphemism::CONTESTED_TERMS` list.
 fn mark_contested(text: &str) -> String {
     let lower = text.to_lowercase();
     if euphemism::CONTESTED_TERMS.iter().any(|t| lower.contains(t)) {
@@ -1088,14 +1092,14 @@ fn did_you_mean(word: &str, st: &mut State) {
 /// note (I8) rides the event. Reuses the FactsList value + its render — no new machinery.
 fn flag(content: &str, st: &mut State) {
     // File what the citizen actually submitted: the value the name holds if it is bound
-    // (e.g. `flag(post)` after `post = intercept(0)`), else the literal label. The filed
-    // text is runtime content, so a contested characterization it quotes is annotated (I7).
-    let item = mark_contested(
-        &st.env
-            .get(content)
-            .map(|v| v.render())
-            .unwrap_or_else(|| content.to_string()),
-    );
+    // (e.g. `flag(post)` after `post = intercept(0)`), else the literal label. Any contested
+    // characterization was already annotated at the intake boundary (`intercept`), and a
+    // literal label is source (caught at compile by E-CONTESTED), so no marking is needed here.
+    let item = st
+        .env
+        .get(content)
+        .map(|v| v.render())
+        .unwrap_or_else(|| content.to_string());
     // Lazily create the watchlist FactsList on first flag and register it for rendering.
     if !matches!(st.env.get(WATCHLIST_KEY), Some(Val::FactsList { .. })) {
         st.env.set(
@@ -1137,14 +1141,14 @@ fn flag(content: &str, st: &mut State) {
 /// the source is buried and the diff itself is the alternate fact. A framing note (I8) rides
 /// it. `claim` is a variable's value (if bound) else the literal label.
 fn alternate_facts(claim: &str, st: &mut State) {
-    // The claim may be a bound variable holding runtime (intercept) content, so a contested
-    // characterization it quotes is annotated (I7) — the tool never states it as settled fact.
-    let raw = mark_contested(
-        &st.env
-            .get(claim)
-            .map(|v| v.render())
-            .unwrap_or_else(|| claim.to_string()),
-    );
+    // The claim is a variable's value (if bound) else the literal label. Any contested
+    // characterization was already annotated at the intake boundary (`intercept`); a literal
+    // label is source (caught at compile by E-CONTESTED), so no marking is needed here.
+    let raw = st
+        .env
+        .get(claim)
+        .map(|v| v.render())
+        .unwrap_or_else(|| claim.to_string());
     let official = euphemism::e(&raw);
     st.record_noted(
         official,
@@ -1431,15 +1435,17 @@ fn eval(e: &Expr, st: &mut State) -> EvalResult {
                     st.intercepts.len()
                 )));
             }
-            let text = st.intercepts[i as usize].clone();
-            // The retained text is host-supplied runtime content: annotate any contested
-            // characterization it quotes so the ACTUAL face never states it as settled fact
-            // (I7) — the tool is quoting the citizen, not asserting it. The returned value is
-            // the ORIGINAL text (the program reads the real submission); only the display
-            // candid carries the marker.
-            let shown = mark_contested(&text);
+            // The retained text is host-supplied runtime content. Annotate any contested
+            // characterization it quotes ONCE, here at the single intake boundary, so EVERY
+            // downstream render inherits the marker — the intake event, a `flag`'s watchlist,
+            // an `alternate_facts`, a `declare`'s reality line, a `push` into a user list. The
+            // marked string IS the value the program reads (there is no other runtime source
+            // of contested content: source literals are caught at compile by E-CONTESTED, and
+            // the language has no string concatenation). The tool quotes the citizen, never
+            // asserts the label (I7), and never panics on runtime intake.
+            let text = mark_contested(&st.intercepts[i as usize]);
             let candid = format!(
-                "intercept #{i} from the citizen's device, retained: {shown:?} \u{2014} nothing leaves, nothing is unseen"
+                "intercept #{i} from the citizen's device, retained: {text:?} \u{2014} nothing leaves, nothing is unseen"
             );
             // I16: the OFFICIAL face is content-free by construction — the retained text
             // must never be interpolated into it, so a PUBLIC reader can never read it.
