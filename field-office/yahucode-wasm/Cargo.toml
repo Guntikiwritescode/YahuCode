@@ -1,0 +1,24 @@
+# A SEPARATE, thin wrapper crate — NOT part of the core `yahucode` package.
+#
+# The core crate stays dependency-free by design (its Cargo.toml has no dependencies).
+# wasm-bindgen lives ONLY here, so the "dependency-free by design" invariant of the core
+# is preserved: this crate depends on the core by path and on wasm-bindgen, and exposes
+# `run_json` to JS. It is built separately (it is not a member of any workspace), so the
+# core crate's gates (`cargo build && cargo test && cargo clippy`) never pull in wasm-bindgen.
+[package]
+name = "yahucode-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "A thin wasm-bindgen wrapper exposing YahuCode's run_json to the browser (the Field Office extension). Keeps the core crate dependency-free."
+license = "MIT"
+publish = false
+
+[lib]
+# cdylib for the wasm artifact; rlib so the wrapper can also be unit-tested natively.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The dependency-free core, by path. Only its library (run_json + emit/JSON path) is used.
+yahucode = { path = "../.." }
+# The ONLY external dependency, and it lives only in this wrapper — never in the core.
+wasm-bindgen = "0.2"
