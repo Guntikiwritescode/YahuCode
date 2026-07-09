@@ -294,6 +294,31 @@ This is an **attributed argument** — "analysts argue …" — and one side of 
 
 ---
 
+### 18. The Field Office standard library (surveil / intercept / did_you_mean / flag / alternate_facts / voluntary)
+
+**Claim as used:** The Field Office constructs mechanize censorship/surveillance maneuvers —
+"voluntary transparency" surveillance turned on the citizen, one-way overwriting of a
+critic's words with sanctioned terms, an unaccountable no-appeal watchlist, and presenting a
+euphemized claim as the fact. The satire's target is the maneuver, applied to the user who
+installed it, never any group.
+
+**Status: stipulation (reuses prior anchors; no new real-world claim)**
+
+- The mechanics themselves (`surveil`, `intercept`, `flag`, `voluntary`, the intake channel,
+  the honesty meter) are **language stipulations** — how YahuCode works — and carry no
+  citation, per the sourcing discipline above.
+- The only real-world content that surfaces is the **relabeling vocabulary**, and it is not
+  new: `did_you_mean` and `alternate_facts` reuse the existing, already-sourced euphemism
+  table (`occupy` → `administer`, `settler` → `resident`, `bomb` → `strike`, …). That table's
+  anchors are **6** (hasbara — the messaging term), **7** ("settlers" → "residents"), **8**
+  (two-tier legal system), and **17** (West Bank dual legal system). No statistic, quote,
+  date, or attribution was invented for the Field Office.
+- Contested characterizations remain gated by the compile-time `E-CONTESTED` check and the
+  emitter's I7 chokepoint: a user cannot make `alternate_facts`/`did_you_mean`/`flag` state a
+  contested label (`apartheid`, `genocide`, …) as settled fact. The framing notes on the
+  three framed constructs (`surveil`, `flag`, `alternate_facts`) keep the butt on the
+  apparatus and off any group (G1/G2), enforced by the framing-regression suite.
+
 ## Maintenance note
 
 These anchors were re-verified with live web access and an adversarial skeptic pass; the snapshot dates in this file (notably the 2026-07-05 checks) are when that held. They should be **re-verified periodically** — figures, court proceedings, and official statements evolve, and URLs decay. Where sourcing is thin or single-sourced (anchors 7 and 9 above), the anchor is deliberately down-ranked rather than presented as settled.

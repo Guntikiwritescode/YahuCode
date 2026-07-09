@@ -112,6 +112,28 @@ const COMPILE_ENABLED: &[(&str, &str)] = &[(
     "tests/golden/example_01.diag",
 )];
 
+/// Intake-seeded examples (Field Office): `(source, emit golden, intercept seeds)`. These
+/// use the `intercept(n)` intake channel, so they run through `run_with_intercepts` with
+/// the host-supplied seeds rather than the empty-channel `run` the plain goldens use.
+const INTERCEPT_ENABLED: &[(&str, &str, &[&str])] = &[
+    // Phase 1 — a minimal intake program: the OFFICIAL face is the content-free intake
+    // line, the retained text rides only the ACTUAL face (I16), and a false declare about
+    // the submission leaves exactly one discrepancy.
+    (
+        "examples/intercept_min.yahu",
+        "tests/golden/intercept_min.emit",
+        &["the war is wrong"],
+    ),
+    // Phase 3 — the flagship: the whole Field Office joke in one program (surveil,
+    // intercept, did_you_mean ×2, flag, alternate_facts, criticism) plus a false declare
+    // that the OFFICIAL face calls discourse free while the ACTUAL proves it censored.
+    (
+        "examples/20_guardian_of_discourse.yahu",
+        "tests/golden/example_20.emit",
+        &["we should end the occupation"],
+    ),
+];
+
 fn assert_emit_golden(src_path: &str, golden_path: &str) {
     let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
     let golden =
@@ -120,6 +142,17 @@ fn assert_emit_golden(src_path: &str, golden_path: &str) {
     let st = runtime::run(&prog);
     // Golden fixtures carry a trailing newline (as written by the generator and by
     // the CLI's `println!`); `emit()` itself returns no trailing newline.
+    let got = format!("{}\n", emit::emit(&st));
+    assert_eq!(got, golden, "emit mismatch for {src_path}");
+}
+
+fn assert_intercept_emit_golden(src_path: &str, golden_path: &str, seeds: &[&str]) {
+    let src = fs::read_to_string(src_path).unwrap_or_else(|e| panic!("read {src_path}: {e}"));
+    let golden =
+        fs::read_to_string(golden_path).unwrap_or_else(|e| panic!("read {golden_path}: {e}"));
+    let prog = parser::parse(&src).unwrap_or_else(|e| panic!("parse {src_path}: {e}"));
+    let intercepts: Vec<String> = seeds.iter().map(|s| s.to_string()).collect();
+    let st = runtime::run_with_intercepts(&prog, intercepts);
     let got = format!("{}\n", emit::emit(&st));
     assert_eq!(got, golden, "emit mismatch for {src_path}");
 }
@@ -150,6 +183,16 @@ fn all_enabled_goldens_match_the_oracle() {
     for (src, golden) in COMPILE_ENABLED {
         assert_diag_golden(src, golden);
     }
+    for (src, golden, seeds) in INTERCEPT_ENABLED {
+        assert_intercept_emit_golden(src, golden, seeds);
+        // Every runnable intake golden must also compile clean (no diagnostics).
+        let src_text = fs::read_to_string(src).unwrap();
+        let prog = parser::parse(&src_text).unwrap();
+        assert!(
+            types::check(&prog).is_empty(),
+            "{src} unexpectedly produced diagnostics"
+        );
+    }
     for (src, golden) in PRESS_ENABLED {
         let src_text = fs::read_to_string(src).unwrap();
         let golden_text = fs::read_to_string(golden).unwrap();
@@ -174,6 +217,90 @@ fn json_projection_exposes_the_discrepancy() {
     assert!(json.contains("casualties=100"));
 }
 
+/// The Field Office acceptance demo (Phase 3): the flagship `guardian_of_discourse` runs
+/// under the extended interpreter and produces a coherent OFFICIAL/ACTUAL diff plus a
+/// non-zero discrepancy count, exercising every new construct — surveil, intercept,
+/// did_you_mean ×2, flag, alternate_facts, criticism, voluntary — and a false declare that
+/// the OFFICIAL face calls discourse free while the ACTUAL proves it censored.
+#[test]
+fn flagship_guardian_of_discourse_acceptance() {
+    use yahucode::model::{Audience, Clearance};
+    let src = fs::read_to_string("examples/20_guardian_of_discourse.yahu").unwrap();
+    let prog = parser::parse(&src).unwrap();
+    // It compiles clean under the extended checker.
+    assert!(
+        types::check(&prog).is_empty(),
+        "the flagship must compile clean: {:?}",
+        types::check(&prog)
+    );
+    let st = runtime::run_with_intercepts(&prog, vec!["we should end the occupation".into()]);
+    assert!(
+        st.runtime_error.is_none(),
+        "no runtime fault: {:?}",
+        st.runtime_error
+    );
+
+    // A non-zero discrepancy count — the OFFICIAL "discourse is free" claim vs the ACTUAL.
+    assert!(
+        st.discrepancy_count() >= 1,
+        "the flagship must log a non-zero discrepancy, got {}",
+        st.discrepancy_count()
+    );
+
+    let official = emit::project(&st, Clearance::Public, Audience::Record).join("\n");
+    let actual = emit::project(&st, Clearance::Sodi, Audience::Record).join("\n");
+
+    // The OFFICIAL face is the pretty, "helpful" censorship UI.
+    for pretty in [
+        "you chose this \u{2014} a free citizen of the only democracy",
+        "voluntary transparency initiative",
+        "content submitted for community context",
+        "did you mean `administer`?",
+        "did you mean `strike`?",
+        "content contextualized",
+    ] {
+        assert!(
+            official.contains(pretty),
+            "OFFICIAL missing {pretty:?}:\n{official}"
+        );
+    }
+
+    // The ACTUAL face is the surveillance/censorship underneath.
+    for ugly in [
+        "reads everything rendered on the citizen's own device",
+        "overwritten one-way",
+        "matched the watchlist",
+        "the diff IS the alternate fact",
+        "MISCAST",
+    ] {
+        assert!(actual.contains(ugly), "ACTUAL missing {ugly:?}:\n{actual}");
+    }
+
+    // I16: the citizen's own submission never reaches the PUBLIC face; the סודי insider sees it.
+    assert!(
+        !official.contains("we should end the occupation"),
+        "I16 violation: the intercepted content leaked to PUBLIC:\n{official}"
+    );
+    assert!(
+        actual.contains("we should end the occupation"),
+        "the סודי insider must see the retained content:\n{actual}"
+    );
+
+    // The framing notes (I8) of the three [framed] constructs plus the #19 safeguard are present.
+    let notes: Vec<String> = st.log.iter().filter_map(|e| e.note.clone()).collect();
+    for marker in [
+        "#surveil framing",
+        "#flag framing",
+        "#alternate_facts framing",
+        "#19 framing",
+    ] {
+        assert!(
+            notes.iter().any(|n| n.contains(marker)),
+            "the flagship must render the {marker:?} note; notes = {notes:?}"
+        );
+    }
+}
+
 /// Guard against a silently-shrinking suite: every committed `.emit`/`.diag` golden
 /// must be referenced by an enabled test (no orphaned or forgotten fixtures).
 #[test]
@@ -185,12 +312,14 @@ fn enabled_examples_are_complete() {
         .filter(|p| p.ends_with(".emit") || p.ends_with(".diag") || p.ends_with(".press"))
         .collect();
     fixtures.sort();
-    let referenced: Vec<String> = ENABLED
+    let mut referenced: Vec<String> = ENABLED
         .iter()
         .chain(COMPILE_ENABLED.iter())
         .chain(PRESS_ENABLED.iter())
         .map(|(_, g)| g.to_string())
         .collect();
+    // The intake-seeded goldens live alongside the others and must also be referenced.
+    referenced.extend(INTERCEPT_ENABLED.iter().map(|(_, g, _)| g.to_string()));
     for f in &fixtures {
         assert!(
             referenced.contains(f),

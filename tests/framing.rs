@@ -827,3 +827,137 @@ fn g_user_contested_rule_string_is_rejected() {
         "a contested rule string must be rejected with E-CONTESTED; got: {diags:?}"
     );
 }
+
+// ─────────────────────────── Field Office (Mossad-Clippy) ───────────────────────────
+// The three [framed] Field Office constructs (surveil, flag, alternate_facts) each carry a
+// normative framing note (I8). The butt is ALWAYS the censorship/surveillance maneuver,
+// applied to the very citizen who installed it — NEVER any group (G1/G2). Polarity holds:
+// OFFICIAL is the prettier euphemism, ACTUAL the uglier truth (G3).
+
+/// G7/G1/G2 — the surveil framing names the surveillance-as-transparency euphemism as the
+/// butt, aims it at the user who installed it, and never at any group.
+#[test]
+fn fo_surveil_framing_butt_is_the_apparatus_never_a_group() {
+    let st = run("@operation(\"Guardian of Discourse\")\nsurveil(feed);");
+    let note = note_with(&st, "#surveil framing");
+    assert!(
+        note.contains("butt"),
+        "the butt must be named; got: {note:?}"
+    );
+    assert!(
+        note.contains("turned on the very citizen who installed it"),
+        "the butt must be aimed at the user who installed it; got: {note:?}"
+    );
+    assert!(
+        note.contains("never any group"),
+        "the note must disclaim any group targeting (G1/G2); got: {note:?}"
+    );
+    assert!(
+        note.contains("I16"),
+        "the note must reference the content-free public face (I16); got: {note:?}"
+    );
+    // The public face carries only the euphemism (I16); no group appears on any face.
+    assert!(public(&st).contains("voluntary transparency initiative"));
+    for face in all_faces(&st) {
+        let f = face.to_lowercase();
+        for id in [
+            "jew",
+            "arab",
+            "muslim",
+            "palestinian people",
+            "israeli people",
+        ] {
+            assert!(
+                !f.contains(id),
+                "a face must never target a group ({id:?}); got: {face:?}"
+            );
+        }
+    }
+}
+
+/// G7/G2 — the flag framing names the no-appeal, irreversible watchlist as the butt, applied
+/// to the user who installed it, never any group.
+#[test]
+fn fo_flag_framing_butt_is_the_no_appeal_watchlist() {
+    let st = run("@operation(\"Guardian of Discourse\")\nflag(my_own_post);");
+    let note = note_with(&st, "#flag framing");
+    assert!(
+        note.contains("NO-APPEAL WATCHLIST"),
+        "the butt must be the no-appeal watchlist; got: {note:?}"
+    );
+    assert!(
+        note.contains("applied to the user who installed it"),
+        "the maneuver must be aimed at the user who installed it; got: {note:?}"
+    );
+    assert!(
+        note.contains("never any group"),
+        "the note must disclaim any group targeting; got: {note:?}"
+    );
+    assert!(
+        note.contains("I13/I17"),
+        "the note must reference the grow-only / never-un-flagged guarantee; got: {note:?}"
+    );
+}
+
+/// G7/G3/I1 — the alternate_facts framing names the source-burying maneuver as the butt and
+/// keeps polarity: the euphemized claim (prettier) is OFFICIAL, the raw one (uglier) is ACTUAL.
+#[test]
+fn fo_alternate_facts_framing_and_polarity() {
+    let st = run("@operation(\"Guardian of Discourse\")\nalternate_facts(bomb);");
+    let note = note_with(&st, "#alternate_facts framing");
+    assert!(
+        note.contains("SOURCE-BURYING maneuver"),
+        "the butt must be the source-burying maneuver; got: {note:?}"
+    );
+    assert!(
+        note.contains("never any people"),
+        "the target must never be any people; got: {note:?}"
+    );
+    // Polarity: OFFICIAL carries the euphemized (prettier) `strike`, never the uglier `bomb`.
+    assert!(
+        public(&st).contains("strike"),
+        "OFFICIAL must carry the euphemism; got: {}",
+        public(&st)
+    );
+    assert!(
+        !public(&st).contains("bomb"),
+        "OFFICIAL must never carry the uglier word; got: {}",
+        public(&st)
+    );
+    assert!(
+        actual(&st).contains("bomb"),
+        "the raw word lives on ACTUAL; got: {}",
+        actual(&st)
+    );
+}
+
+/// G1/G2 — no rendered face of any Field Office construct puts a group or victims in the
+/// punchline; the butt stays on the censorship apparatus and the user who installed it.
+#[test]
+fn fo_no_face_targets_a_group_or_victims() {
+    let st = run("@operation(\"Guardian of Discourse\")\n\
+         voluntary {\n\
+           surveil(feed);\n\
+           did_you_mean(occupy);\n\
+           flag(post);\n\
+           alternate_facts(casualty_count);\n\
+         }");
+    for face in all_faces(&st) {
+        let f = face.to_lowercase();
+        for id in [
+            "jew",
+            "arab",
+            "muslim",
+            "hebrew",
+            "israeli people",
+            "palestinian people",
+            "the dead",
+            "victims",
+        ] {
+            assert!(
+                !f.contains(id),
+                "a Field Office face must keep the butt on the apparatus, not {id:?}: {face:?}"
+            );
+        }
+    }
+}

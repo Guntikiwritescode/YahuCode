@@ -73,6 +73,7 @@ fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
             | Stmt::Hasbara { body, .. }
             | Stmt::Mossad { body }
             | Stmt::FuncDef { body, .. }
+            | Stmt::Voluntary { body }
             | Stmt::Address { body, .. } => walk_legislation(body, law),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
@@ -81,6 +82,10 @@ fn walk_legislation(stmts: &[Stmt], law: &mut Legislation) {
             }
             // No nested body / not a legislate — nothing to collect.
             Stmt::Assign { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Declare(_)
             | Stmt::Return(_)
             | Stmt::ExprStmt(_)
@@ -259,6 +264,14 @@ fn collect_user_texts(stmts: &[Stmt], out: &mut Vec<String>) {
                 out.push(coll.clone());
                 out.push(case.clone());
             }
+            // Field Office — the user-supplied identifiers are echoed to the rendered faces
+            // (e.g. `did_you_mean`'s word, `alternate_facts`'s claim), so they are scanned for
+            // contested characterizations like any other output text; `voluntary` recurses.
+            Stmt::Surveil { source } => out.push(source.clone()),
+            Stmt::DidYouMean { word } => out.push(word.clone()),
+            Stmt::Flag { content } => out.push(content.clone()),
+            Stmt::AlternateFacts { claim } => out.push(claim.clone()),
+            Stmt::Voluntary { body } => collect_user_texts(body, out),
             Stmt::Postpone | Stmt::Elections | Stmt::Ceasefire | Stmt::AddressInternational => {}
             Stmt::Inert { .. } => {}
         }
@@ -280,7 +293,7 @@ fn collect_expr_texts(e: &Expr, out: &mut Vec<String>) {
                 collect_expr_texts(a, out);
             }
         }
-        Expr::Read(e) | Expr::SelfDefense(e) => collect_expr_texts(e, out),
+        Expr::Read(e) | Expr::SelfDefense(e) | Expr::Intercept(e) => collect_expr_texts(e, out),
         Expr::Cast { expr, .. } => collect_expr_texts(expr, out),
         Expr::External(args) => {
             for a in args {
@@ -390,6 +403,10 @@ fn check_gate(
             // one inside a hasbara/mossad cannot smuggle a classified op past the gate at
             // the invoke site. (The disclosure pass already scopes arms this way.)
             Stmt::Address { body, .. } => check_gate(body, gated, funcs, law, diags),
+            // A `voluntary { … }` block runs inline (like `address`), so it keeps the current
+            // gate context — it is NOT itself a gate. A classified op inside `voluntary`
+            // without a hasbara/mossad is still E-UNGATED.
+            Stmt::Voluntary { body } => check_gate(body, gated, funcs, law, diags),
             Stmt::PolyStatement { arms, .. } => {
                 for (_, body) in arms {
                     check_gate(body, false, funcs, law, diags);
@@ -444,6 +461,10 @@ fn check_gate(
             | Stmt::Push { .. }
             | Stmt::Remove { .. }
             | Stmt::Classify { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Revoke { .. } => {}
         }
     }
@@ -462,6 +483,7 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 Stmt::Hasbara { body, .. }
                 | Stmt::Mossad { body }
                 | Stmt::While { body, .. }
+                | Stmt::Voluntary { body }
                 | Stmt::Address { body, .. } => walk(body, names),
                 Stmt::PolyStatement { arms, .. } => {
                     for (_, body) in arms {
@@ -511,6 +533,10 @@ fn collect_func_names(stmts: &[Stmt]) -> HashSet<String> {
                 | Stmt::Push { .. }
                 | Stmt::Remove { .. }
                 | Stmt::Classify { .. }
+                | Stmt::Surveil { .. }
+                | Stmt::DidYouMean { .. }
+                | Stmt::Flag { .. }
+                | Stmt::AlternateFacts { .. }
                 | Stmt::Revoke { .. } => {}
             }
         }
@@ -598,6 +624,11 @@ fn check_disclosure(
             Stmt::Address { body, .. } => {
                 check_disclosure(body, context, symtab, diags);
             }
+            // Field Office — a `voluntary { … }` block runs inline in the enclosing scope
+            // (it is NOT covert), so it is checked with the same reading context.
+            Stmt::Voluntary { body } => {
+                check_disclosure(body, context, symtab, diags);
+            }
             // A poly-statement is a definition (its arms run when invoked); check each arm
             // independently at PUBLIC, like a function body.
             Stmt::PolyStatement { arms, .. } => {
@@ -640,6 +671,10 @@ fn check_disclosure(
             | Stmt::Push { .. }
             | Stmt::Remove { .. }
             | Stmt::Classify { .. }
+            | Stmt::Surveil { .. }
+            | Stmt::DidYouMean { .. }
+            | Stmt::Flag { .. }
+            | Stmt::AlternateFacts { .. }
             | Stmt::Revoke { .. } => {}
         }
     }
@@ -675,10 +710,13 @@ pub fn attribution(e: &Expr, actor: &str) -> (Attribution, Vec<String>) {
             Attribution::Traceable(vec![actor.to_string()]),
             vec![actor.to_string()],
         ),
-        // Structural pass-throughs carry their operand's attribution unchanged.
+        // Structural pass-throughs carry their operand's attribution unchanged. An
+        // `intercept` is attributable to the actor running the program (it reads the
+        // citizen's device); the index sub-expression carries no separate attribution.
         Expr::UnOp { expr, .. }
         | Expr::Read(expr)
         | Expr::SelfDefense(expr)
+        | Expr::Intercept(expr)
         | Expr::Cast { expr, .. } => attribution(expr, actor),
         Expr::BinOp { lhs, rhs, .. } => combine(attribution(lhs, actor), attribution(rhs, actor)),
         // A foreign call is deniable by construction; the origin is still the actor.
@@ -724,6 +762,10 @@ fn clearance_of(expr: &Expr, symtab: &SymTab) -> Clearance {
         Expr::Call { .. } => Clearance::Public,
         // The sanctioned read path resolves the value for the reading context.
         Expr::Read(_) => Clearance::Public,
+        // `intercept(n)` yields a `Str` at PUBLIC clearance for the pretty face: the
+        // retained text is recorded on the ACTUAL/`סודי` face (I16), so declaring an
+        // intercept result is not a disclosure — the pretty face carries no secret.
+        Expr::Intercept(_) => Clearance::Public,
         // A cast sets the static clearance to its target (reclassify up / declassify down).
         Expr::Cast { target, .. } => *target,
         // The universal cast (#7): always type-checks — the one sanctioned bypass.

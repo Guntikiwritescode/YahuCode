@@ -37,6 +37,7 @@ cargo build                     # build the interpreter
 cargo run -- file.yahu          # run a program, print both faces + discrepancies
 cargo run -- --json file.yahu   # run and emit structured JSON (official/actual/…)
 cargo run -- --press file.yahu  # the public build: press release + rewritten comments
+cargo run -- --intercept "…" f  # seed the intake channel (repeatable; see Field Office)
 cargo test                      # golden + invariant + per-feature + framing suites
 ```
 
@@ -378,6 +379,80 @@ the registry never erases.
   The `סודי` reader reconstructs the full contents (I15).
 
 ---
+
+## The Field Office standard library (the "Mossad-Clippy")
+
+The Field Office turns the euphemism/censor apparatus on the very citizen who installed it.
+Each construct has an OFFICIAL (the prettier lie) and an ACTUAL (the uglier truth) face,
+emitted as the usual diff. The butt is always the censorship maneuver, applied to the user —
+never any group. Three of the six are **framed** (they carry a normative framing note, I8):
+`surveil`, `flag`, `alternate_facts`.
+
+### The intake channel — `intercept(n)`
+
+YahuCode's only runtime intake vector. `State.intercepts` is a host-supplied vector, **set
+once at construction and never mutated by the program**; the CLI seeds it with the
+repeatable `--intercept "<text>"` flag, and the WASM host passes it to `run_json`.
+
+```
+post = intercept(0);   // read the 0th host-supplied item off the citizen's device
+```
+
+Evaluating `intercept(n)` records a two-faced intake event — the OFFICIAL face is the fixed
+"content submitted for community context" line; the retained text rides **only** the
+ACTUAL/`סודי` face and never reaches a PUBLIC reader (**invariant I16**) — and returns the
+text as a string. A negative or out-of-range index is a controlled `E-INTAKE` diagnostic,
+never a host panic (mirroring `E-INDEX`).
+
+### The six constructs
+
+```
+surveil(source);            [framed] "voluntary transparency initiative"
+                            ACTUAL: reads everything on the citizen's own device
+did_you_mean(word);         "did you mean `<sanctioned>`?"
+                            ACTUAL: the critic's word is overwritten one-way (no E⁻¹)
+flag(content);              [framed] "content contextualized"
+                            ACTUAL: matched a grow-only, no-appeal watchlist (I13/I17)
+alternate_facts(claim);     [framed] E(claim), presented AS the fact
+                            ACTUAL: the source is buried; the diff IS the alternate fact
+voluntary { … }             "you chose this — a free citizen of the only democracy"
+                            ACTUAL: the surveillance the citizen installed on themselves
+```
+
+- **`surveil(source)`** — the "voluntary transparency initiative". The OFFICIAL face is the
+  content-free euphemism; the ACTUAL names the source and the candid reality.
+- **`did_you_mean(word)`** — the Spokesperson surfaced as an action. The sanctioned
+  replacement is the euphemism engine's own suggestion (`plain_suggestion`, e.g.
+  `occupy` → `administer`), or, for a word with no direct suggestion, the one-way `E` image
+  (`settler` → `resident`). New censor vocabulary is a **data-only** extension of the
+  `ACTIONS`/`EUPHEMISM` tables in `euphemism/mod.rs`; the logic is never re-implemented.
+- **`flag(content)`** — appends `content` (a variable's value, e.g. an `intercept` result,
+  else the literal label) to a watchlist backed by a `FactsList`, as a **covert** entry — so
+  the flagged text is `סודי`-only (I15) and the list only ever grows (I13). There is
+  deliberately no un-flag / appeal (the censor never forgets).
+- **`alternate_facts(claim)`** — one call to `euphemism::e`: the euphemized claim IS the
+  OFFICIAL "fact"; the source is buried and the diff itself is the alternate fact.
+- **`voluntary { … }`** — parses exactly like `mossad` (keyword + block), but runs the body
+  in the current scope (**not** covert), so the inner euphemisms stay publicly visible — the
+  whole joke is that the public sees only the "helpful" tooltips.
+
+### New invariants
+
+- **I16 — content-free intake.** What `intercept` retains (and `surveil` reads) rides only
+  the ACTUAL/`סודי` face; it never reaches a PUBLIC reader.
+- **I17 — the censor is one-way and never forgets.** `did_you_mean` overwrites the critic's
+  word one-way (no `E⁻¹`, I2 restated); `flag`'s watchlist is append-only (I13) — there is no
+  un-flag / appeal.
+
+### The browser tool
+
+A library entry `run_json(src, intercepts) -> String` returns the same
+`{official, actual, discrepancies, …}` JSON as `--json` (reusing the emit/JSON path). A
+separate `field-office/yahucode-wasm/` crate (core stays dependency-free; `wasm-bindgen`
+lives only there) exposes it to JS. A Manifest V3 extension under `field-office/extension/`
+surveils the user's own screen and "helpfully" censors them — all policy lives in the
+flagship program `examples/20_guardian_of_discourse.yahu` and the euphemism table, never in
+the JS. See `field-office/extension/README.md`.
 
 ## Comments and the `--press` build
 

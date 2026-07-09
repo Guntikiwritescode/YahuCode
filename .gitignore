@@ -1,4 +1,8 @@
 /target
+# Nested crate build artifacts (the wasm wrapper builds separately from the core gates).
+**/target/
+# wasm-pack / wasm-bindgen output bundled into the extension.
+field-office/extension/wasm/
 Cargo.lock
 **/*.rs.bk
 *.pyc

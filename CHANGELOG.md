@@ -8,6 +8,40 @@ full guardrails, [`README.md`](README.md) and [`LANGUAGE.md`](LANGUAGE.md) for t
 overview, and [`docs/sources.md`](docs/sources.md) for the sourcing of every real-world
 anchor.
 
+## [v4] — Field Office (the "Mossad-Clippy")
+
+A standard library that turns the euphemism/censor apparatus on the very citizen who
+installed it, plus a voluntary browser tool that surveils the user's own screen and
+"helpfully" censors them. The butt is always the censorship maneuver, applied to the user,
+never any group.
+
+### Added
+- **The intake channel** `intercept(n)` (Feature): YahuCode's only runtime intake vector.
+  `State.intercepts` is host-supplied and set once at construction (the CLI `--intercept`
+  flag, or the WASM host). It records a two-faced intake event and returns the retained
+  text; an out-of-range index is a controlled `E-INTAKE` diagnostic.
+- **Six constructs**: `surveil` [framed], `did_you_mean`, `flag` [framed], `alternate_facts`
+  [framed], and the `voluntary { … }` scope — each reusing the named engine (the euphemism
+  table, `E`, a `FactsList` watchlist) rather than re-implementing it.
+- Invariants **I16** (content-free intake — the retained/surveilled/flagged content never
+  reaches a PUBLIC reader) and **I17** (the censor is one-way and never forgets — a grow-only
+  watchlist, no un-flag/appeal, no `E⁻¹`).
+- The library entry `run_json(src, intercepts)` (reusing the emit/JSON path) and a **separate**
+  `field-office/yahucode-wasm/` wrapper crate (core stays dependency-free; `wasm-bindgen` lives
+  only there) exposing it to the browser.
+- The Manifest V3 extension `field-office/extension/` — a thin JS shim (read → `run_json` →
+  parse → paint) with the flagship `examples/20_guardian_of_discourse.yahu` as the default
+  policy. All policy lives in the `.yahu` program and the euphemism table, never in the JS.
+- Example program **20** (`20_guardian_of_discourse`) and a minimal intake example, both
+  frozen as golden fixtures, plus per-construct feature/framing tests and the I16/I17 checks.
+
+### Notes
+- The core crate remains **dependency-free by design**; the core lib builds unchanged for
+  `wasm32-unknown-unknown` (no std feature had to be isolated).
+- No new real-world claims were baked in: `did_you_mean`/`alternate_facts` reuse the already
+  sourced euphemism relabelings (`docs/sources.md` anchors 6–8, 17); the surveil/intercept/
+  flag/voluntary faces are language stipulations.
+
 ## [v3] — Collections
 
 Three collection types, each carrying the one-way-truth discipline: real contents only

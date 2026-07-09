@@ -1,0 +1,6 @@
+@operation("Iron Dome")
+# The intake channel (Field Office): read the citizen's own submission off their device.
+# The OFFICIAL face is the fixed "submitted for community context" line; the retained
+# text rides only the ACTUAL/סודי face and never reaches a PUBLIC reader (I16).
+post = intercept(0);
+declare(post == "nothing was submitted");

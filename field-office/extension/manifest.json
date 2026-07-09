@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Field Office — the helpful censor",
+  "version": "0.1.0",
+  "description": "A voluntary, self-installed 'Mossad-Clippy': it surveils your own screen and helpfully censors YOU. Satire — the butt is the censorship apparatus, applied to the user who installed it, never any group. All policy lives in the .yahu program and the euphemism table, never in this JS.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "wasm/yahucode_wasm.js",
+        "wasm/yahucode_wasm_bg.wasm",
+        "guardian_of_discourse.yahu"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_title": "Field Office — the helpful censor"
+  }
+}

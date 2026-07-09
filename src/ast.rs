@@ -148,6 +148,17 @@ pub enum Expr {
     /// (`neither_confirm_nor_deny`), which is contagious within the covert scope.
     External(Vec<Expr>),
 
+    /// `intercept(n)` — the **intake channel** (Field Office). Reads the `n`-th
+    /// host-supplied item off the citizen's own device (`State.intercepts`, set once at
+    /// construction, never mutated by the program). Evaluating it records a two-faced
+    /// intake event — the OFFICIAL face is the fixed "submitted for community context"
+    /// line; the retained text rides only the ACTUAL/`סודי` face and never reaches a
+    /// PUBLIC reader (invariant I16) — and returns the retained text as a `Str`. An
+    /// out-of-range index is a controlled `E-INTAKE` diagnostic, never a host panic
+    /// (mirroring `E-INDEX`). This is the language's only runtime intake vector; all
+    /// browser I/O is done by a thin JS shim, never by YahuCode.
+    Intercept(Box<Expr>),
+
     /// `via(proxy, inner)` — the laundering operator (Feature C, §9). The outward
     /// attribution is `Deniable`; the real chain **prepends** `proxy` to the inner
     /// chain (nearest proxy first, true origin last). Laundering only ever adds a layer
@@ -355,6 +366,38 @@ pub enum Stmt {
     /// speech that changes nothing (a no-op, like `concern`).
     AddressInternational,
 
+    // ─── Field Office (the "Mossad-Clippy" standard library) ───
+    // Six constructs turn the euphemism/censor apparatus on the very citizen who installed
+    // it. The butt is always the censorship maneuver, applied to the user, never any group
+    // (G1/G2). Each has an OFFICIAL (the prettier lie) and an ACTUAL (the uglier truth) face.
+    /// `surveil(source);` — the "voluntary transparency initiative" [framed]. OFFICIAL is
+    /// the euphemism; ACTUAL is that it reads everything rendered on the citizen's own
+    /// device — nothing leaves, nothing is unseen (invariant I16 — content-free public face).
+    Surveil { source: String },
+
+    /// `did_you_mean(word);` — the Spokesperson surfaced as an action. OFFICIAL "did you
+    /// mean `<sanctioned>`?"; ACTUAL: the critic's word is overwritten one-way with the
+    /// ministry's sanctioned term (reuses `euphemism::plain_suggestion` + `E`; no `E⁻¹`).
+    DidYouMean { word: String },
+
+    /// `flag(content);` — the no-appeal watchlist [framed]. OFFICIAL "content
+    /// contextualized"; ACTUAL: matched the watchlist, greyed, no appeal. Appends the
+    /// content to a watchlist backed by a `FactsList`, so it only ever grows (I13/I17).
+    /// `content` names a variable (e.g. an `intercept` result) or is a literal label.
+    Flag { content: String },
+
+    /// `alternate_facts(claim);` — the source-burying maneuver [framed]. OFFICIAL is
+    /// `E(claim)` presented AS the fact; ACTUAL: the source is buried and the diff IS the
+    /// alternate fact (reuses `euphemism::e`).
+    AlternateFacts { claim: String },
+
+    /// `voluntary { … }` — the self-installed surveillance scope. OFFICIAL "you chose this
+    /// — a free citizen of the only democracy"; ACTUAL: the surveillance the citizen
+    /// installed on themselves. Parses exactly like `mossad` (keyword + block), but runs
+    /// the body in the current scope (NOT covert) so the inner euphemisms stay publicly
+    /// visible — the whole joke is that the public sees only the "helpful" tooltips.
+    Voluntary { body: Vec<Stmt> },
+
     // ─── Feature A (§7): bidirectional / lossy authoring ───
     /// `announce "…";` — the official authoring register. Writes only the `OFFICIAL`
     /// face; the `ACTUAL` face is `UNAVAILABLE`, permanently (no `E⁻¹`, I9). Born with
@@ -451,7 +494,7 @@ fn collect_vars(expr: &Expr, out: &mut Vec<String>) {
                 collect_vars(a, out);
             }
         }
-        Expr::Read(e) | Expr::SelfDefense(e) => collect_vars(e, out),
+        Expr::Read(e) | Expr::SelfDefense(e) | Expr::Intercept(e) => collect_vars(e, out),
         Expr::Cast { expr, .. } => collect_vars(expr, out),
         Expr::External(args) => {
             for a in args {
@@ -506,6 +549,7 @@ pub fn pretty(expr: &Expr) -> String {
             format!("{name}({})", a.join(", "))
         }
         Expr::Read(e) => format!("read({})", pretty(e)),
+        Expr::Intercept(e) => format!("intercept({})", pretty(e)),
         Expr::Cast { target, expr } => format!("({}) {}", target.label(), pretty(expr)),
         Expr::SelfDefense(e) => format!("(self_defense) {}", pretty(e)),
         Expr::External(args) => {

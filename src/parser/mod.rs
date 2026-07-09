@@ -221,6 +221,24 @@ impl Parser {
                     self.kw_no_arg("address_international")?;
                     Ok(Stmt::AddressInternational)
                 }
+                // Field Office — five single-argument statements plus a block wrapper. Each
+                // is dispatched by name in the identifier arm, exactly like the other
+                // government-rhetoric moves (mossad/criticism/…); no lexer change.
+                "surveil" => Ok(Stmt::Surveil {
+                    source: self.kw_one_ident("surveil")?,
+                }),
+                "did_you_mean" => Ok(Stmt::DidYouMean {
+                    word: self.kw_one_ident("did_you_mean")?,
+                }),
+                "flag" => Ok(Stmt::Flag {
+                    content: self.kw_one_ident("flag")?,
+                }),
+                "alternate_facts" => Ok(Stmt::AlternateFacts {
+                    claim: self.kw_one_ident("alternate_facts")?,
+                }),
+                // `voluntary { … }` parses exactly like `mossad`: consume the keyword,
+                // parse a block, wrap it. (Its runtime scope is NOT covert — see runtime.)
+                "voluntary" => self.voluntary(),
                 "announce" => self.announce(),
                 // Feature C — a `via(...)` laundering used as a statement is an expression
                 // statement (parsed by `primary`), not a bare call/action.
@@ -754,6 +772,14 @@ impl Parser {
         Ok(Stmt::Mossad { body })
     }
 
+    /// `voluntary { … }` — the self-installed surveillance scope (Field Office). Parses
+    /// exactly like `mossad`: consume the keyword, parse a `block()`, wrap it.
+    fn voluntary(&mut self) -> Result<Stmt, ParseError> {
+        self.next(); // 'voluntary'
+        let body = self.block()?;
+        Ok(Stmt::Voluntary { body })
+    }
+
     /// `blame(who);`
     fn blame(&mut self) -> Result<Stmt, ParseError> {
         self.next(); // 'blame'
@@ -911,6 +937,15 @@ impl Parser {
                         let e = self.expr()?;
                         self.eat(&Tok::RParen)?;
                         Ok(Expr::Read(Box::new(e)))
+                    }
+                    // `intercept(n)` — the intake channel (Field Office): read the n-th
+                    // host-supplied item off the citizen's device. Dispatched here in the
+                    // primary-expression `Ident` arm, exactly like `read`/`external`/`via`.
+                    "intercept" if *self.peek() == Tok::LParen => {
+                        self.next();
+                        let e = self.expr()?;
+                        self.eat(&Tok::RParen)?;
+                        Ok(Expr::Intercept(Box::new(e)))
                     }
                     // `external(args…)` — the mossad foreign interface.
                     "external" if *self.peek() == Tok::LParen => {

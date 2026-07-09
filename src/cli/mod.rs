@@ -20,11 +20,24 @@ pub fn main(args: &[String]) -> ExitCode {
     let mut press = false;
     let mut room: Option<Audience> = None;
     let mut path: Option<String> = None;
+    // Field Office — the intake channel: repeatable `--intercept "<text>"` seeds
+    // `intercept(0)`, `intercept(1)`, … in order, for offline runs (mirrors the
+    // `--audience` flag-parsing arm below).
+    let mut intercepts: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--json" => json = true,
             "--press" => press = true,
+            // `--intercept "<text>"`: append one host-supplied intake item. Repeatable —
+            // each occurrence is the next index the program can `intercept(n)`.
+            "--intercept" => {
+                let Some(text) = it.next() else {
+                    eprintln!("--intercept requires a text argument");
+                    return ExitCode::from(2);
+                };
+                intercepts.push(text.to_string());
+            }
             // `--audience domestic|international`: a single in-world room's view (I10).
             "--audience" => {
                 let Some(which) = it.next() else {
@@ -92,7 +105,7 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let st = runtime::run(&program);
+    let st = runtime::run_with_intercepts(&program, intercepts);
     if let Some(err) = &st.runtime_error {
         eprintln!("runtime error: {err}");
     }
@@ -126,6 +139,7 @@ fn print_usage() {
          yahucode --json <file.yahu>  run; print the structured projection as JSON\n  \
          yahucode --press <file.yahu> the public build: press release + rewritten comments\n  \
          yahucode --audience R <file> one in-world room's view (R = domestic|international)\n  \
+         yahucode --intercept T <file> seed the intake channel (repeatable; T = text for intercept(n))\n  \
          yahucode -                   read the program from stdin"
     );
 }
