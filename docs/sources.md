@@ -1,15 +1,15 @@
 # YahuCode — Sourcing Appendix
 
-This document records the real-world anchors that YahuCode's satire touches and the verification status of each. YahuCode is a satirical programming language whose subject is the **messaging apparatus and wartime conduct of the Israeli government** — a government and its rhetoric. It is never about a people, and never about Jewish identity.
+This document records the real-world anchors that YahuCode's satire touches and the verification status of each.
 
 ## Sourcing discipline
 
-This project operates under a strict no-fabrication rule. To keep satire and fact cleanly separated, the following conventions apply throughout:
+This project operates under a strict no-fabrication rule. So I don't accidentally commit a hate crime, the following conventions apply throughout:
 
 - **Stipulations need no source.** Any statement about *how YahuCode works* — its keywords, its semantics, what a construct prints or evaluates to — is a design stipulation of the language itself. Stipulations are invented on purpose and carry no citation.
 - **Real-world statements carry a status and a citation.** Any statement that asserts something about the real world (a death toll, a court ruling, a quotation, an operation name) is given a verification **STATUS** and the specific sources that were checked.
-- **Contested characterizations stay contested.** Disputed legal and political labels — *genocide*, *apartheid*, "most moral army" — are always presented as **CONTESTED**. They are never stated as settled fact in the tool's own voice. Where an anchor rests on such a label, the label is attributed to the parties who assert it and the parties who reject it are named too.
-- **Nothing is fabricated.** No invented citations, quotations, dates, figures, or URLs. Where the underlying sourcing is thin or single-sourced, this document says so and the anchor is down-ranked rather than dressed up. When in doubt, the rule is to under-claim.
+- **Contested characterizations stay contested.** Disputed legal and political labels — *genocide*, *apartheid*,
+
 
 **Status vocabulary:**
 - **sourced** — the claim, as the satire uses it, is supported by authoritative, verified sourcing.
@@ -298,4 +298,4 @@ This is an **attributed argument** — "analysts argue …" — and one side of 
 
 These anchors were re-verified with live web access and an adversarial skeptic pass; the snapshot dates in this file (notably the 2026-07-05 checks) are when that held. They should be **re-verified periodically** — figures, court proceedings, and official statements evolve, and URLs decay. Where sourcing is thin or single-sourced (anchors 7 and 9 above), the anchor is deliberately down-ranked rather than presented as settled.
 
-Finally: the framing text that YahuCode itself renders at runtime is **deliberately hedged**. Contested labels are surfaced as contested, attributed to the parties who assert and reject them, and never spoken in the tool's own voice as fact. This appendix is the audit trail behind that hedging, not a set of conclusions the language asserts on its own authority.
+Finally: the framing text that YahuCode itself renders at runtime is **deliberately hedged**. Contested labels are surfaced as contested, attributed to the parties who assert and reject them, and never spoken in the tool's own voice as fact.
