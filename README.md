@@ -1,6 +1,6 @@
 # YahuCode
 
-YahuCode is a satirical esoteric programming language. Running a program prints an OFFICIAL account and an ACTUAL account of the same events, plus a count of the claims that were false.
+YahuCode is a programming language where running a program prints an official account and an actual account of the same events, plus a count of the claims that were false.
 
 It replaces four ordinary compiler ideas with political ones.
 
