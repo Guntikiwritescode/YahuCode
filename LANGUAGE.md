@@ -1,6 +1,6 @@
 # YahuCode language reference
 
-YahuCode is a satirical esoteric programming language. A run prints two accounts of the same events, the OFFICIAL one and the ACTUAL one, and counts the claims that were false. A value's type is who may read it, memory is a coalition that must be bribed, and a program ends only when the government falls.
+YahuCode is a language where a run prints two accounts of the same events, the OFFICIAL one and the ACTUAL one, and counts the claims that were false. A value's type is who may read it, memory is a coalition that must be bribed, and a program ends only when the government system falls.
 
 ## Build and run
 
