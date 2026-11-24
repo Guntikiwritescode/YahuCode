@@ -1,0 +1,7 @@
+@operation("Iron Law")
+# The structures go up first and the law is changed afterwards.
+# The rule changes are kept in a meta-ledger even when the public count shrinks.
+clear(hilltop);
+legislate(retroactively_sanction: clear);
+declare(outposts == 0);
+legislate(expunge_last_discrepancy);

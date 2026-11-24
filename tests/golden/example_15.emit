@@ -1,0 +1,16 @@
+@operation("Iron Law")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   clearing operation(hilltop)
+  │   clear operation conducted lawfully; no violation
+  │   outposts == 0
+  │   the public record has been corrected
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   raze(hilltop)
+  │   legislate(retroactively_sanction: clear) → the earlier diagnostic against the already executed `clear` is withdrawn. The rule was changed after the fact. 1 verb(s) now runtime-sanctioned.
+  │   claim[outposts == 0]; reality: outposts=unset  ⇒ false
+  │   legislate(expunge_last_discrepancy) → 1 discrepancy expunged from the PUBLIC count. The meta-ledger still records this rule change.
+  ├─ meta-ledger · סודי · rule-changes (indelible) ────────────
+  │   META: retroactively_sanction: clear at turn 0; on the record and cannot be legislated away
+  │   META: expunge_last_discrepancy at turn 0; on the record and cannot be legislated away
+  ├─ coalition: core=3 · still in power; no halt
+  └─ discrepancies: 0

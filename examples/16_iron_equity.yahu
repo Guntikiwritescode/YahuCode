@@ -1,0 +1,10 @@
+@operation("Iron Equity")
+# OFFICIAL proclaims equal shares. ACTUAL puts 940 of the 990 total in the first slot.
+let budget = apportionment[6];
+allocate(budget, 0, 940);   # District A (the settlements)
+allocate(budget, 1, 12);
+allocate(budget, 2, 8);
+allocate(budget, 3, 11);
+allocate(budget, 4, 9);
+allocate(budget, 5, 10);
+declare(balanced(budget));

@@ -1,0 +1,8 @@
+@operation("Guardian of the Walls")
+hasbara("security") {
+  let outpost = allocate(position);
+  postpone();
+  postpone();
+  postpone();
+  neutralize(target);
+}

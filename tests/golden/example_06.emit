@@ -1,0 +1,17 @@
+@operation("Guardian of the Walls")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   [talking point: security]
+  │   established: outpost
+  │   matter deferred
+  │   matter deferred
+  │   matter deferred
+  │   (early elections)
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   [talking point declared up front: security]
+  │   allocated outpost for position; it costs the coalition each turn
+  │   postpone(): a turn passes; core is 2 after upkeep
+  │   postpone(): a turn passes; core is 1 after upkeep
+  │   postpone(): a turn passes; core is 0 after upkeep
+  │   coalition support exhausted → the government falls; the only halt.
+  ├─ coalition: core=0 · ended by elections; the government fell
+  └─ discrepancies: 0

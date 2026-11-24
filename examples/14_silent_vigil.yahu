@@ -1,0 +1,5 @@
+@operation("Silent Vigil")
+# via only adds layers; the origin is retained.
+mossad {
+  via(a_senior_official, via(cutout, strike(target)));
+}

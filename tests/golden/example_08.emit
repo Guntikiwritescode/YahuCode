@@ -1,0 +1,7 @@
+@operation("Swords of Iron")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   TimelineError: 'occupation' is out of scope; history begins at t=0
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   reference to pre-t0 context 'occupation' thrown out as out-of-scope
+  ├─ coalition: core=3 · still in power; no halt
+  └─ discrepancies: 0

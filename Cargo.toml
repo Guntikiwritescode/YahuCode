@@ -1,0 +1,8 @@
+[package]
+name = "yahucode"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+description = "A satirical esoteric programming language."
+repository = "https://github.com/Guntikiwritescode/YahuCode"
+publish = false

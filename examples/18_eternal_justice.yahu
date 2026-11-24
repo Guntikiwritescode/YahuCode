@@ -1,0 +1,9 @@
+@operation("Eternal Justice")
+# One uniform rule proclaimed, differential routing applied.
+# ACTUAL: the same act, same place, routed to different court systems by assigned status.
+let court = registry("equal before the law");
+classify(court, case_A, military);    # case_A: a resident of the territory
+classify(court, case_B, civilian);    # case_B: same act, same place
+route(court, case_A);
+route(court, case_B);
+declare(equal_before_the_law(court));

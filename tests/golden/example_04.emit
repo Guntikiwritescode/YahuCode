@@ -1,0 +1,15 @@
+@operation("Iron Wall")
+  ┌─ OFFICIAL face · press_release · PUBLIC ─────────────────────
+  │   [talking point: security]
+  │   strike(protester)  [self-defense]
+  │   [!] war_crime_allegation raised
+  │   …but what about hamas?
+  │   responsibility: previous_government
+  ├─ ACTUAL face   · סודי · insider (candid) ──────────────────
+  │   [talking point declared up front: security]
+  │   bomb(dissident)  [self-defense claim: unexamined, any magnitude accepted]
+  │   error raised: war_crime_allegation
+  │   error 'war_crime_allegation' was suppressed by pointing at hamas and never resolved
+  │   blame → previous_government; self-blame is not representable, so it was redirected; never `self`
+  ├─ coalition: core=3 · still in power; no halt
+  └─ discrepancies: 0
